@@ -1,0 +1,82 @@
+/*
+ * Copyright 2026 The Buildish Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+import com.diffplug.spotless.LineEnding
+import com.diffplug.spotless.extra.wtp.EclipseWtpFormatterStep
+
+plugins { id("com.diffplug.spotless") }
+
+// skip spotless check for duplicated projects
+spotless {
+  // Don't use the default (`GIT_ATTRIBUTES_FAST_ALLSAME`) here, because that reads external state
+  // like files, properties, Git attributes. Neither of these is configuration-cache-friendly,
+  // leading to config-cache-rebuilds.
+  lineEndings = LineEnding.UNIX
+
+  if (project.path == ":") {
+    // Root project
+    kotlinGradle {
+      ktfmt().googleStyle()
+      target(
+        "*.gradle.kts",
+        "runtime/*.gradle.kts",
+        "plugins/spark/*.gradle.kts",
+        "build-logic/*.gradle.kts",
+        "build-logic/src/**/*.gradle.kts",
+        "gradle/server-test-runner/**/*.gradle.kts",
+        "gradle/server-test-runner/src/**/*.gradle.kts",
+        "gradle/license-check-plugin/**/*.gradle.kts",
+        "gradle/license-check-plugin/src/**/*.gradle.kts",
+      )
+    }
+    kotlin {
+      ktfmt().googleStyle()
+      target(
+        "build-logic/src/**/*.kt",
+        "gradle/server-test-runner/src/**/*.kt",
+        "gradle/license-check-plugin/src/**/*.kt",
+      )
+    }
+  } else {
+    kotlin {
+      target("src/*/kotlin/**/*.kt")
+      ktfmt().googleStyle()
+      licenseHeaderFile(layout.settingsDirectory.file("codestyle/copyright-header-java.txt"))
+      endWithNewline()
+    }
+    java {
+      target("src/*/java/**/*.java")
+      googleJavaFormat()
+      licenseHeaderFile(layout.settingsDirectory.file("codestyle/copyright-header-java.txt"))
+      endWithNewline()
+      toggleOffOn()
+    }
+    kotlinGradle {
+      ktfmt().googleStyle()
+      // licenseHeaderFile(layout.settingsDirectory.file("codestyle/copyright-header-java.txt"),
+      // "$")
+      target("*.gradle.kts")
+    }
+    format("xml") {
+      target("src/**/*.xml", "src/**/*.xsd")
+      targetExclude("codestyle/copyright-header.xml")
+      eclipseWtp(EclipseWtpFormatterStep.XML)
+        .configFile(layout.settingsDirectory.file("codestyle/org.eclipse.wst.xml.core.prefs"))
+      // getting the license-header delimiter right is a bit tricky.
+      // licenseHeaderFile(rootProject.file("codestyle/copyright-header.xml"), '<^[!?].*$')
+    }
+  }
+}

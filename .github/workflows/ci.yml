@@ -1,0 +1,106 @@
+#
+# Copyright 2026 The Buildish Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - main
+      - release/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    name: Check
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Java 17 and 21
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          # The last version is the build JVM; Stutter selects both consumer JVMs.
+          java-version: |
+            17
+            21
+          overwrite-settings: false
+
+      # TODO use Buildish Mammoth Cache in this build once there is a release of it.
+
+      - name: Run checks and packaged consumer compatibility tests
+        run: >-
+          ./gradlew --no-daemon --stacktrace --console=plain
+          -Dorg.gradle.java.installations.fromEnv=JAVA_HOME_17_X64,JAVA_HOME_21_X64
+          -Dorg.gradle.java.installations.auto-download=false
+          check
+
+      - name: Fail when checks leave Git changes behind
+        run: |
+          modified="$(git status --short)"
+          test -z "$modified" || { printf 'Checks left Git changes behind:\n%s\n' "$modified"; exit 1; }
+
+  zizmor:
+    name: zizmor
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run zizmor
+        uses: zizmorcore/zizmor-action@53290badfa369cb0bf7ad16342cb62c2fa47ac7b # v0.8.0
+        with:
+          advanced-security: false
+
+  required_checks:
+    name: Required Checks
+    if: ${{ always() }}
+    needs:
+      - check
+      - zizmor
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Assert all required jobs succeeded
+        env:
+          CHECK_RESULT: ${{ needs.check.result }}
+          ZIZMOR_RESULT: ${{ needs.zizmor.result }}
+        run: |
+          for result in "$CHECK_RESULT" "$ZIZMOR_RESULT"; do
+            if [ "$result" != success ]; then
+              echo "Required job did not succeed: $result"
+              exit 1
+            fi
+          done
