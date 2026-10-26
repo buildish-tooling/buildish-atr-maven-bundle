@@ -1,5 +1,5 @@
 ---
-title: "ATR Maven Bundle for Gradle"
+title: "ATR Maven Bundle for Gradle®"
 description: "Create local Maven publication bundles for ATR, Maven Central and Njord."
 ---
 

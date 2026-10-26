@@ -19,7 +19,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 -->
 
-Create local bundles from the Maven publications in your Gradle build. The
+Create local bundles from the Maven publications in your Gradle® build. The
 plugin shares collection, checksum completion and optional signing across all
 requested output tasks.
 
