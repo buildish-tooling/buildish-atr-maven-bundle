@@ -105,6 +105,7 @@ tasks {
 
   named("check") {
     dependsOn(rat)
+    dependsOn(gradle.includedBuild("buildish-atr-maven-bundle-build-logic").task(":test"))
   }
 
   named<Wrapper>("wrapper") {

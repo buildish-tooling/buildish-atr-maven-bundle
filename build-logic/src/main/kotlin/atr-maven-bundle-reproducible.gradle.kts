@@ -14,9 +14,6 @@
  * limitations under the License.
  */
 
-import java.nio.file.Files
-import java.nio.file.attribute.PosixFilePermission
-
 // ensure jars conform to reproducible builds
 // (https://docs.gradle.org/current/userguide/working_with_files.html#sec:reproducible_archives)
 tasks.withType<AbstractArchiveTask>().configureEach {
@@ -24,11 +21,7 @@ tasks.withType<AbstractArchiveTask>().configureEach {
   isReproducibleFileOrder = true
 
   eachFile {
-    permissions {
-      val isExec =
-        Files.getPosixFilePermissions(file.toPath()).contains(PosixFilePermission.OWNER_EXECUTE)
-      unix(if (isExec) "755" else "644")
-    }
+    permissions { unix(reproducibleFileMode(file.toPath())) }
   }
   dirPermissions { unix("755") }
 }
