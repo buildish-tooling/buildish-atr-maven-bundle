@@ -63,13 +63,26 @@ The GitHub Actions CI workflow runs on pull requests, pushes to `main` and
 `release/**`, and manual dispatch. Its Linux build installs Java 17 and 21, uses
 Java 21 for the build, and runs `check`, including RAT, unit tests, packaged
 functional tests and both Stutter compatibility pairs. A separate zizmor job
-checks the workflow definitions. The `Required Checks` job succeeds only when
-both jobs succeed.
+checks the workflow definitions. Linux also prepares a standalone test payload
+for the native Windows job. `Required Checks` requires Linux, Windows and zizmor
+to succeed.
 
-The repository build deliberately disables configuration caching in CI, which
-also requires disabling isolated projects for that outer build. Its consumer fixtures still independently require configuration-cache storage/reuse
-and isolated projects. To run the outer build in a CI environment:
+The repository build uses its configured configuration-cache and isolated-project
+settings. Consumer fixtures independently require strict configuration-cache
+storage/reuse and isolated projects.
 
-```shell
-./gradlew --no-configuration-cache -Dorg.gradle.isolated-projects=false -Dorg.gradle.java.installations.auto-download=false check
-```
+### Windows qualification job
+
+The Windows job uses the wrapper-pinned Gradle distribution installed on `PATH`;
+it does not require a `gradlew.bat` in this repository. It downloads the test
+payload produced by `:gradle-plugin:windowsQualification` in the Linux job and
+runs the existing software-signing fixture from a directory containing spaces.
+The standalone harness uses local runtime JARs and a local Maven repository,
+with offline execution, strict configuration-cache handling and isolated projects.
+
+The fixture covers all three creators' archive/files outputs, signature checks,
+one shared signing pass, configuration-cache reuse and fixed-byte reproducibility.
+It generates ephemeral test keys and requires no release credentials. Windows
+JUnit results and HTML reports are retained as CI artifacts. A successful native
+Windows run supplies qualification evidence; defining this job or running the
+harness on Linux does not by itself qualify Windows.

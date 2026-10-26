@@ -36,6 +36,7 @@ spotless {
         "plugins/spark/*.gradle.kts",
         "build-logic/*.gradle.kts",
         "build-logic/src/**/*.gradle.kts",
+        "tools/windows-qualification/*.gradle.kts",
         "gradle/server-test-runner/**/*.gradle.kts",
         "gradle/server-test-runner/src/**/*.gradle.kts",
         "gradle/license-check-plugin/**/*.gradle.kts",
