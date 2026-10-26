@@ -104,3 +104,23 @@ jobs:
               exit 1
             fi
           done
+
+  publish-site:
+    name: Publish aggregate site
+    needs: required_checks
+    # Requires BUILDISH_SITE_PUBLISH_TOKEN with Actions write access to the
+    # buildish-tooling/buildish repository.
+    if: >-
+      always() &&
+      !cancelled() &&
+      needs.required_checks.result == 'success' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main'
+      && false
+    runs-on: ubuntu-slim
+    permissions: {}
+    steps:
+      - name: Dispatch aggregate site publishing
+        env:
+          GH_TOKEN: ${{ secrets.BUILDISH_SITE_PUBLISH_TOKEN }}
+        run: gh workflow run site-publish.yml --repo buildish-tooling/buildish --ref main
