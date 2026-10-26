@@ -89,7 +89,6 @@ APP_BASE_NAME=${0##*/}
 APP_HOME=$( cd -P "${APP_HOME:-./}" > /dev/null && printf '%s\n' "$PWD" ) || exit
 
 . "${APP_HOME}/gradle/gradlew-include.sh"
-[ -f "${APP_HOME}/.env" ] && . "${APP_HOME}/.env"
 
 # Use the maximum available, or set MAX_FD != -1 to use that value.
 MAX_FD=maximum

@@ -184,24 +184,6 @@ tasks {
     dependsOn(testing.suites.named("functionalTest"), testing.suites.named("compatTest"))
   }
 
-  register<Zip>("windowsQualification") {
-    group = "verification"
-    description = "Packages the existing functional fixture for standalone Windows qualification."
-    dependsOn(
-      ":publishMavenJavaPublicationToFunctionalTestRepository",
-      "publishPluginMavenPublicationToFunctionalTestRepository",
-      "publishAtrMavenBundlePluginMarkerMavenPublicationToFunctionalTestRepository",
-    )
-    archiveFileName.set("windows-qualification.zip")
-    destinationDirectory.set(layout.buildDirectory)
-    duplicatesStrategy = DuplicatesStrategy.FAIL
-    from(layout.settingsDirectory.dir("tools/windows-qualification"))
-    from(layout.settingsDirectory.file("version.txt"))
-    from(sourceSets.named("functionalTest").map { it.output }) { into("test-classes") }
-    from(configurations.named("functionalTestRuntimeClasspath")) { into("lib") }
-    from(layout.settingsDirectory.dir("build/functional-test-repository")) { into("repository") }
-  }
-
   shadowJar {
     exclude("META-INF/*.kotlin_module")
     enableAutoRelocation = true

@@ -76,21 +76,6 @@ if (providers.systemProperty("idea.sync.active").getOrElse("false").toBoolean())
 
 eclipse { project { name = ideName } }
 
-tasks.named<Wrapper>("wrapper") {
-  actions.addLast {
-    val script = scriptFile.readText()
-    val scriptLines = script.lines().toMutableList()
-
-    val insertAtLine =
-      scriptLines.indexOf("# Use the maximum available, or set MAX_FD != -1 to use that value.")
-    scriptLines.add(insertAtLine, "")
-    scriptLines.add(insertAtLine, $$"[ -f \"${APP_HOME}/.env\" ] && . \"${APP_HOME}/.env\"")
-    scriptLines.add(insertAtLine, $$". \"${APP_HOME}/gradle/gradlew-include.sh\"")
-
-    scriptFile.writeText(scriptLines.joinToString("\n"))
-  }
-}
-
 // The packaged consumer resolves the real marker, implementation and parent POM locally.
 publishing {
   repositories {
@@ -120,5 +105,32 @@ tasks {
 
   named("check") {
     dependsOn(rat)
+  }
+
+  named<Wrapper>("wrapper") {
+    actions.addLast {
+      val shellScript = scriptFile
+      val batchFile = batchScript
+
+      val scriptLines = shellScript.readText().lines().toMutableList()
+
+      val insertAtLine =
+        scriptLines.indexOf("# Use the maximum available, or set MAX_FD != -1 to use that value.")
+      scriptLines.add(insertAtLine, "")
+      scriptLines.add(insertAtLine, $$". \"${APP_HOME}/gradle/gradlew-include.sh\"")
+
+      val batchLines = batchFile.readText().lines().toMutableList()
+
+      val batchInsertAtLine =
+        batchLines.indexOf("@rem Resolve any \".\" and \"..\" in APP_HOME to make it shorter.")
+      batchLines.add(batchInsertAtLine, "")
+      batchLines.add(
+        batchInsertAtLine,
+        "powershell -file \"%APP_HOME%\\gradle\\gradlew-include.ps1\"",
+      )
+
+      shellScript.writeText(scriptLines.joinToString("\n"))
+      batchFile.writeText(batchLines.joinToString("\r\n"))
+    }
   }
 }

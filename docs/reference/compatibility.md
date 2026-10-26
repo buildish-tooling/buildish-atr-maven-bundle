@@ -63,9 +63,8 @@ The GitHub Actions CI workflow runs on pull requests, pushes to `main` and
 `release/**`, and manual dispatch. Its Linux build installs Java 17 and 21, uses
 Java 21 for the build, and runs `check`, including RAT, unit tests, packaged
 functional tests and both Stutter compatibility pairs. A separate zizmor job
-checks the workflow definitions. Linux also prepares a standalone test payload
-for the native Windows job. `Required Checks` requires Linux, Windows and zizmor
-to succeed.
+checks the workflow definitions. `Required Checks` requires Linux, Windows and
+zizmor to succeed.
 
 The repository build uses its configured configuration-cache and isolated-project
 settings. Consumer fixtures independently require strict configuration-cache
@@ -73,16 +72,16 @@ storage/reuse and isolated projects.
 
 ### Windows qualification job
 
-The Windows job uses the wrapper-pinned Gradle distribution installed on `PATH`;
-it does not require a `gradlew.bat` in this repository. It downloads the test
-payload produced by `:gradle-plugin:windowsQualification` in the Linux job and
-runs the existing software-signing fixture from a directory containing spaces.
-The standalone harness uses local runtime JARs and a local Maven repository,
-with offline execution, strict configuration-cache handling and isolated projects.
+The independent Windows job uses `gradlew.bat` and Java 21 to build and run the
+existing software-signing fixture through `:gradle-plugin:functionalTest`. The
+fixture creates a consumer build in a path containing spaces and checks strict
+configuration-cache storage/reuse and isolated projects. It uses the plugin
+packaged by that native Windows build and its private local Maven repository.
+There is no separate Gradle installation action or cross-platform test payload.
 
 The fixture covers all three creators' archive/files outputs, signature checks,
 one shared signing pass, configuration-cache reuse and fixed-byte reproducibility.
 It generates ephemeral test keys and requires no release credentials. Windows
 JUnit results and HTML reports are retained as CI artifacts. A successful native
 Windows run supplies qualification evidence; defining this job or running the
-harness on Linux does not by itself qualify Windows.
+fixture on Linux does not by itself qualify Windows.

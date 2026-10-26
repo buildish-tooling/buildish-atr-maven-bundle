@@ -59,15 +59,6 @@ jobs:
           -Dorg.gradle.java.installations.fromEnv=JAVA_HOME_17_X64,JAVA_HOME_21_X64
           -Dorg.gradle.java.installations.auto-download=false
           check
-          :gradle-plugin:windowsQualification
-
-      - name: Upload Windows qualification payload
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: windows-qualification-payload
-          path: gradle-plugin/build/windows-qualification.zip
-          if-no-files-found: error
-          retention-days: 1
 
       - name: Fail when checks leave Git changes behind
         run: |
@@ -76,7 +67,6 @@ jobs:
 
   windows-check:
     name: Windows check
-    needs: check
     runs-on: windows-2025
     timeout-minutes: 20
     steps:
@@ -92,34 +82,13 @@ jobs:
           java-version: '21'
           overwrite-settings: false
 
-      - name: Read the pinned Gradle version
-        id: gradle_version
+      - name: Run the representative packaged signing and output fixture
         shell: pwsh
-        run: |
-          $wrapper = Get-Content -LiteralPath 'gradle/wrapper/gradle-wrapper.properties' -Raw
-          if ($wrapper -notmatch '(?m)^distributionUrl=.*gradle-([0-9.]+)-(?:bin|all)\.zip\r?$') {
-            throw 'Cannot determine the pinned Gradle version'
-          }
-          "version=$($Matches[1])" >> $env:GITHUB_OUTPUT
-
-      - name: Install the wrapper-pinned Gradle distribution
-        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
-        with:
-          gradle-version: ${{ steps.gradle_version.outputs.version }}
-          cache-disabled: true
-
-      - name: Download qualification payload from the Linux job
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: windows-qualification-payload
-          path: build/windows-qualification
-
-      - name: Run the packaged fixture in a Windows path containing spaces
-        shell: pwsh
-        run: |
-          $payload = Join-Path $env:RUNNER_TEMP 'atr bundle qualification'
-          Expand-Archive -LiteralPath 'build/windows-qualification/windows-qualification.zip' -DestinationPath $payload
-          gradle --project-dir "$payload" --no-daemon --offline --configuration-cache --configuration-cache-problems=fail "-Dorg.gradle.isolated-projects=true" "-Dorg.gradle.java.installations.auto-download=false" qualifyWindows
+        run: >-
+          .\gradlew.bat --no-daemon --stacktrace --console=plain
+          "-Dorg.gradle.java.installations.auto-download=false"
+          :gradle-plugin:functionalTest
+          --tests org.buildish.atrmavenbundle.gradleplugin.SigningPreparationTest.softwareSigningSurvivesEarlyRealizationCliOverrideAndConfigurationCacheReuse
 
       - name: Upload Windows test reports
         if: ${{ !cancelled() }}
@@ -127,8 +96,8 @@ jobs:
         with:
           name: windows-qualification-reports
           path: |
-            ${{ runner.temp }}/atr bundle qualification/build/reports/tests/qualifyWindows
-            ${{ runner.temp }}/atr bundle qualification/build/test-results/qualifyWindows
+            gradle-plugin/build/reports/tests/functionalTest
+            gradle-plugin/build/test-results/functionalTest
           if-no-files-found: warn
           retention-days: 7
 
