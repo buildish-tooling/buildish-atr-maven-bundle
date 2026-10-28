@@ -63,7 +63,7 @@ kotlin {
 
 dependencies {
   // Gradle 9.1 supplies Kotlin 2.2.0. Do not ship a newer, relocated Kotlin runtime.
-  compileOnly(kotlin("stdlib", "2.2.0"))
+  compileOnly(kotlin("stdlib", "2.4.21"))
   testImplementation(gradleTestKit())
   testImplementation(platform(libs.junit.bom))
   testImplementation("org.junit.jupiter:junit-jupiter")
