@@ -31,6 +31,12 @@
   groupSingleUpdates: false,
 
   packageRules: [
+    {
+      // Stutter's compatibility matrix is the only .lockfile; it is not a dependency lock.
+      // Revisit if Gradle dependency locks or verification metadata are introduced.
+      matchManagers: ['gradle'],
+      skipArtifactsUpdate: true,
+    },
     // Check for updates, do not merge automatically. This rule does effectively nothing, but serves as a
     // reference for the kinds of managers used in this project.
     {
