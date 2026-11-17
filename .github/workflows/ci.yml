@@ -51,7 +51,10 @@ jobs:
             21
           overwrite-settings: false
 
-      # TODO use Buildish Mammoth Cache in this build once there is a release of it.
+      - name: Restore Gradle caches and provision wrapper
+        uses: buildish-tooling/buildish-mammoth-cache/actions/github/gradle@9794ba64b65fcdc6b12999f13de382aeb43fe5bf # v0.1.0
+        with:
+          wrapper-properties-files: gradle/wrapper/gradle-wrapper.properties
 
       - name: Run checks and packaged consumer compatibility tests
         run: >-
@@ -81,6 +84,11 @@ jobs:
           distribution: temurin
           java-version: '25'
           overwrite-settings: false
+
+      - name: Restore Gradle caches and provision wrapper
+        uses: buildish-tooling/buildish-mammoth-cache/actions/github/gradle@9794ba64b65fcdc6b12999f13de382aeb43fe5bf # v0.1.0
+        with:
+          wrapper-properties-files: gradle/wrapper/gradle-wrapper.properties
 
       - name: Run the representative packaged signing and output fixture
         shell: pwsh
