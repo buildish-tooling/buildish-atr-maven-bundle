@@ -29,10 +29,10 @@ group, ACLs and creation/change times are outside this guarantee. Newly generate
 signatures and upstream artifacts can vary independently.
 
 The plugin targets Gradle **9.1+** and Java **17+**; this repository builds with
-Gradle **9.8.2** and Java **21**. Java 17 classfiles/JVM attributes and a Kotlin
+Gradle **9.9.1** and Java **21**. Java 17 classfiles/JVM attributes and a Kotlin
 2.2-compatible API boundary are checked. Packaged Kotlin DSL consumers pass on
 Linux with Gradle 9.1.0/Java 17 and Gradle 9.8.2/Java 21, with strict configuration
-cache and isolated projects. The broader Gradle 9.8.2/Java 21 tests cover
+cache and isolated projects. The broader Gradle 9.9.1/Java 21 tests cover
 Java/Kotlin/Groovy/BOM publications and real ephemeral software signing. Native
 Windows execution remains unqualified at present. Non-POSIX filesystem tests do
 not establish Windows runtime support. GPG/hardware signing and live
@@ -40,7 +40,7 @@ ATR/Central/Njord import are not covered by these tests.
 
 ## Building and qualification
 
-Build this repository with Java 21 and Gradle 9.8.2. `check` includes unit tests,
+Build this repository with Java 21 and Gradle 9.9.1. `check` includes unit tests,
 strict packaged consumer tests and the Stutter `compatTest` suite. The sparse
 lock pins exactly Gradle 9.1.0/Java 17 and Gradle 9.8.2/Java 21. Make both JDKs
 available to Gradle toolchain discovery. Stutter selects each Gradle/JVM pair;

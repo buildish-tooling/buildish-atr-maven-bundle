@@ -72,3 +72,8 @@ hs_err_pid*
 .opencode/
 skills-lock.json
 
+
+# Independent released-documentation worktree
+/docs/releases/
+__pycache__/
+.pytest_cache/

@@ -34,7 +34,7 @@ val repoUrl = "https://buildish.org/components/atr-maven-bundle"
 
 gradlePlugin {
   website = repoUrl
-  vcsUrl = repoUrl
+  vcsUrl = "https://github.com/buildish-tooling/buildish-atr-maven-bundle"
   plugins {
     create("atrMavenBundle") {
       id = "org.buildish.atr-maven-bundle.gradle-plugin"

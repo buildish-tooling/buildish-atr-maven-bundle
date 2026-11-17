@@ -100,6 +100,6 @@ nmcpSettings {
     publishingType.set(if (isCI) "AUTOMATIC" else "USER_MANAGED")
     publishingTimeout.set(Duration.ofMinutes(120))
     validationTimeout.set(Duration.ofMinutes(120))
-    publicationName.set("nessie-$baseVersion")
+    publicationName.set("buildish-atr-maven-bundle-${baseVersion.get()}")
   }
 }

@@ -134,6 +134,7 @@ jobs:
       - check
       - windows-check
       - zizmor
+      - release-check
     runs-on: ubuntu-slim
     timeout-minutes: 5
     permissions: {}
@@ -143,13 +144,32 @@ jobs:
           CHECK_RESULT: ${{ needs.check.result }}
           WINDOWS_CHECK_RESULT: ${{ needs.windows-check.result }}
           ZIZMOR_RESULT: ${{ needs.zizmor.result }}
+          RELEASE_CHECK_RESULT: ${{ needs.release-check.result }}
         run: |
-          for result in "$CHECK_RESULT" "$WINDOWS_CHECK_RESULT" "$ZIZMOR_RESULT"; do
+          for result in "$CHECK_RESULT" "$WINDOWS_CHECK_RESULT" "$ZIZMOR_RESULT" "$RELEASE_CHECK_RESULT"; do
             if [ "$result" != success ]; then
               echo "Required job did not succeed: $result"
               exit 1
             fi
           done
+
+  release-check:
+    name: Release workflow checks
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: $/.github/actions/setup-release-tooling
+        id: tooling
+      - name: Run installed-package and release-policy regressions
+        env:
+          RELEASE_PYTHON: ${{ steps.tooling.outputs.python }}
+        run: |
+          "$RELEASE_PYTHON" -m pip --isolated install --only-binary=:all: \
+            --index-url https://pypi.org/simple --cache-dir "$RUNNER_TEMP/pip-cache" 'pytest==9.2.0'
+          "$RELEASE_PYTHON" -B -m pytest tests -q
 
   publish-site:
     name: Publish aggregate site

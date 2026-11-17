@@ -18,6 +18,13 @@ import org.jetbrains.gradle.ext.copyright
 import org.jetbrains.gradle.ext.encodings
 import org.jetbrains.gradle.ext.settings
 
+// Release publishing is deliberately split from this source build. This build creates
+// candidate artifacts without publication credentials. Plugin Portal promotion uses
+// buildish-release-tooling/portal-publisher/build.gradle from the trusted workflow
+// revision to upload the retained candidate bytes, with compilation and archive
+// generation disabled. Keep shared plugin identity and metadata consistent between
+// gradle-plugin/build.gradle.kts and that publisher.
+
 buildscript { repositories { maven { url = java.net.URI("https://plugins.gradle.org/m2/") } } }
 
 plugins {
@@ -105,7 +112,25 @@ tasks {
 
   named("check") {
     dependsOn(rat)
+    dependsOn("versionedDocsTest")
     dependsOn(gradle.includedBuild("buildish-atr-maven-bundle-build-logic").task(":test"))
+  }
+
+  register<Exec>("versionedDocsTest") {
+    group = LifecycleBasePlugin.VERIFICATION_GROUP
+    description =
+      "Checks component-owned released-documentation maintenance in disposable repositories."
+    commandLine(
+      "python3",
+      "-B",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests",
+      "-p",
+      "test_versioned_docs.py",
+    )
   }
 
   named<Wrapper>("wrapper") {

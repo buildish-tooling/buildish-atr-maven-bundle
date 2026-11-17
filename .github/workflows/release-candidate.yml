@@ -1,0 +1,232 @@
+# Copyright 2026 The Buildish Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+
+name: Release Candidate
+'on':
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact final version X.Y.Z
+        required: true
+        type: string
+      source_ref:
+        description: Optional source ref; defaults to main
+        required: false
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: buildish-release-${{ github.repository }}-${{ inputs.version }}
+  cancel-in-progress: false
+jobs:
+  resolve:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    outputs:
+      source_commit: ${{ steps.resolve.outputs.source_commit }}
+      candidate_tag: ${{ steps.resolve.outputs.candidate_tag }}
+      state_digest: ${{ steps.resolve.outputs.state_digest }}
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+      statuses: read
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.workflow_sha }}
+        persist-credentials: false
+        fetch-depth: 0
+    - uses: $/.github/actions/setup-release-tooling
+      id: tooling
+    - run: |
+        set -euo pipefail
+        python3 -B buildish-release-tooling/workflow.py preflight candidate
+        mkdir -p "$RUNNER_TEMP/resolution"
+        args=("$RELEASE_VERSION")
+        if [[ -n "$SOURCE_REF" ]]; then args+=("$SOURCE_REF"); fi
+        bash buildish-release-tooling/release-tooling.sh resolve-candidate "${args[@]}"
+        source="$(python3 -c 'import json,os; print(json.load(open(os.environ["MANIFEST_PATH"]))["source"]["commit_sha"])')"
+        test "$(git show "$source:version.txt" | tr -d '\n')" = "$RELEASE_VERSION"
+        MANIFEST_PATH="$RUNNER_TEMP/source-checks.json" bash buildish-release-tooling/release-tooling.sh verify-source-ref-checks "$RELEASE_VERSION" "$source"
+        python3 -B buildish-release-tooling/workflow.py outputs "$MANIFEST_PATH"
+      env:
+        BUILDISH_RELEASE_TOOLING_PYTHON: ${{ steps.tooling.outputs.python }}
+        GH_TOKEN: ${{ github.token }}
+        RELEASE_VERSION: ${{ inputs.version }}
+        SOURCE_REF: ${{ inputs.source_ref }}
+        MANIFEST_PATH: ${{ runner.temp }}/resolution/state.json
+      id: resolve
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: candidate-resolution-${{ github.run_id }}
+        path: ${{ runner.temp }}/resolution
+        if-no-files-found: error
+        retention-days: 90
+        overwrite: true
+  build:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    needs:
+    - resolve
+    outputs:
+      bundle_digest: ${{ steps.build.outputs.bundle_digest }}
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.workflow_sha }}
+        persist-credentials: false
+        fetch-depth: 1
+    - uses: $/.github/actions/setup-release-tooling
+      id: tooling
+    - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880
+      with:
+        distribution: temurin
+        java-version: |-
+          17
+          21
+        overwrite-settings: false
+    - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        name: candidate-resolution-${{ github.run_id }}
+        path: ${{ runner.temp }}/resolution
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ needs.resolve.outputs.source_commit }}
+        path: source
+        persist-credentials: false
+    - run: |
+        set -euo pipefail
+        python3 -B buildish-release-tooling/workflow.py digest "$RUNNER_TEMP/resolution/state.json" "$EXPECTED_DIGEST"
+        (cd source && ./gradlew --no-daemon --console=plain \
+          -Dorg.gradle.java.installations.fromEnv=JAVA_HOME_17_X64,JAVA_HOME_21_X64 \
+          -Dorg.gradle.java.installations.auto-download=false \
+          :publishMavenJavaPublicationToReleaseBundleRepository \
+          :gradle-plugin:publishPluginMavenPublicationToReleaseBundleRepository \
+          :gradle-plugin:publishAtrMavenBundlePluginMarkerMavenPublicationToReleaseBundleRepository)
+        python3 -B buildish-release-tooling/workflow.py export source/build/release-repository "$RUNNER_TEMP/unsigned/repository" "$RELEASE_VERSION"
+        bash buildish-release-tooling/consume.sh "file://$RUNNER_TEMP/unsigned/repository" "$RELEASE_VERSION" "$RUNNER_TEMP/consumer"
+        python3 -B buildish-release-tooling/workflow.py seal "$RUNNER_TEMP/unsigned"
+      env:
+        BUILDISH_RELEASE_TOOLING_PYTHON: ${{ steps.tooling.outputs.python }}
+        EXPECTED_DIGEST: ${{ needs.resolve.outputs.state_digest }}
+        RELEASE_VERSION: ${{ inputs.version }}
+      id: build
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: candidate-unsigned-${{ github.run_id }}
+        path: ${{ runner.temp }}/unsigned
+        if-no-files-found: error
+        retention-days: 90
+        overwrite: true
+  sign:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    needs:
+    - build
+    environment: release-candidate
+    outputs:
+      bundle_digest: ${{ steps.sign.outputs.bundle_digest }}
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.workflow_sha }}
+        persist-credentials: false
+        fetch-depth: 1
+    - uses: $/.github/actions/setup-release-tooling
+      id: tooling
+    - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        name: candidate-unsigned-${{ github.run_id }}
+        path: ${{ runner.temp }}/unsigned
+    - run: |
+        set -euo pipefail
+        python3 -B buildish-release-tooling/workflow.py verify "$RUNNER_TEMP/unsigned" "$EXPECTED_DIGEST"
+        python3 -B buildish-release-tooling/workflow.py sign "$RUNNER_TEMP/unsigned/repository" "$RUNNER_TEMP/signed-repository" "$RELEASE_VERSION"
+        python3 -B buildish-release-tooling/workflow.py pack "$RUNNER_TEMP/signed-repository" "$RUNNER_TEMP/maven.zip" "$RELEASE_VERSION"
+        mv "$RUNNER_TEMP/maven.zip" "$RUNNER_TEMP/buildish-atr-maven-bundle-$RELEASE_VERSION-maven.zip"
+        bash buildish-release-tooling/release-tooling.sh prepare-release-assets --output-dir "$RUNNER_TEMP/signed/assets" \
+          "$RUNNER_TEMP/buildish-atr-maven-bundle-$RELEASE_VERSION-maven.zip"
+        python3 -B buildish-release-tooling/workflow.py seal "$RUNNER_TEMP/signed"
+      env:
+        BUILDISH_RELEASE_TOOLING_PYTHON: ${{ steps.tooling.outputs.python }}
+        EXPECTED_DIGEST: ${{ needs.build.outputs.bundle_digest }}
+        RELEASE_VERSION: ${{ inputs.version }}
+        BUILDISH_GPG_PRIVATE_KEY: ${{ secrets.BUILDISH_RELEASE_GPG_SECRET_SUBKEY }}
+        BUILDISH_GPG_PASSPHRASE: ${{ secrets.BUILDISH_RELEASE_GPG_PASSPHRASE }}
+      id: sign
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: candidate-signed-${{ github.run_id }}
+        path: ${{ runner.temp }}/signed
+        if-no-files-found: error
+        retention-days: 90
+        overwrite: true
+  publish-candidate:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    needs:
+    - resolve
+    - sign
+    permissions:
+      contents: write
+    environment: release-candidate
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.workflow_sha }}
+        persist-credentials: false
+        fetch-depth: 0
+    - uses: $/.github/actions/setup-release-tooling
+      id: tooling
+    - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        name: candidate-resolution-${{ github.run_id }}
+        path: ${{ runner.temp }}/resolution
+    - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        name: candidate-signed-${{ github.run_id }}
+        path: ${{ runner.temp }}/signed
+    - run: |
+        set -euo pipefail
+        python3 -B buildish-release-tooling/workflow.py digest "$RUNNER_TEMP/resolution/state.json" "$STATE_DIGEST"
+        python3 -B buildish-release-tooling/workflow.py verify "$RUNNER_TEMP/signed" "$ASSET_DIGEST"
+        state="$RUNNER_TEMP/resolution/state.json"
+        assets=("$RUNNER_TEMP/signed/assets/"*)
+        MANIFEST_PATH="$RUNNER_TEMP/tag.json" bash buildish-release-tooling/release-tooling.sh create-candidate-tag --candidate-state "$state"
+        MANIFEST_PATH="$RUNNER_TEMP/stage.json" bash buildish-release-tooling/release-tooling.sh stage-github-candidate --candidate-state "$state" "${assets[@]/#/--asset=}"
+        mkdir -p "$RUNNER_TEMP/candidate"
+        manifest="$RUNNER_TEMP/candidate/candidate-manifest.json"
+        MANIFEST_PATH="$manifest" bash buildish-release-tooling/release-tooling.sh create-candidate-manifest --candidate-state "$state" --stage-result "$RUNNER_TEMP/stage.json"
+        bash buildish-release-tooling/release-tooling.sh attach-github-candidate-manifest --candidate-state "$state" --candidate-manifest "$manifest"
+        digest="$(sha256sum "$manifest" | cut -d' ' -f1)"
+        bash buildish-release-tooling/release-tooling.sh verify-github-candidate --candidate-tag "$CANDIDATE_TAG" --candidate-manifest-digest "$digest"
+        bash buildish-release-tooling/release-tooling.sh finalize-github-candidate --candidate-tag "$CANDIDATE_TAG" --candidate-manifest-digest "$digest"
+        printf 'Candidate: %s; manifest SHA-256: %s\n' "$CANDIDATE_TAG" "$digest" >> "$GITHUB_STEP_SUMMARY"
+      env:
+        BUILDISH_RELEASE_TOOLING_PYTHON: ${{ steps.tooling.outputs.python }}
+        STATE_DIGEST: ${{ needs.resolve.outputs.state_digest }}
+        ASSET_DIGEST: ${{ needs.sign.outputs.bundle_digest }}
+        CANDIDATE_TAG: ${{ needs.resolve.outputs.candidate_tag }}
+        GH_TOKEN: ${{ github.token }}
+        GIT_COMMITTER_NAME: ATR Maven Bundle Release
+        GIT_COMMITTER_EMAIL: dev@buildish.org
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: candidate-manifest-${{ github.run_id }}
+        path: ${{ runner.temp }}/candidate
+        if-no-files-found: error
+        retention-days: 90
+        overwrite: true

@@ -23,7 +23,8 @@ Create local bundles from the Maven publications in your Gradle® build. The
 plugin shares collection, checksum completion and optional signing across all
 requested output tasks.
 
-These documents describe the development version. Start with the
+Choose the intended release or unreleased development snapshot in the version
+navigation. Start with the
 [getting-started guide](getting-started/), then use the [reference](reference/)
 for individual settings and tasks.
 

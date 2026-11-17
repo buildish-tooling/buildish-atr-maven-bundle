@@ -24,6 +24,12 @@ plugins {
 }
 
 publishing {
+  repositories {
+    maven {
+      name = "releaseBundle"
+      url = layout.settingsDirectory.dir("build/release-repository").asFile.toURI()
+    }
+  }
   publications {
     // java-gradle-plugin supplies pluginMaven (including Shadow integration).
     if (!plugins.hasPlugin("java-gradle-plugin")) {
@@ -33,7 +39,7 @@ publishing {
     withType(MavenPublication::class.java) {
       val projectName = project.name
       val projectGroup = project.group.toString()
-      val projectDescription = project.description.toString()
+      val projectDescription = project.description ?: "Buildish ATR Maven Bundle"
       val projectVersion = project.version.toString()
       val isRootProject = project == rootProject
       val parentName = "buildish-atr-maven-bundle"
@@ -60,6 +66,13 @@ publishing {
               url.set("https://www.apache.org/licenses/LICENSE-2.0.txt")
             }
           }
+          developers {
+            developer {
+              id.set("buildish")
+              name.set("Buildish Developers")
+              email.set("dev@buildish.org")
+            }
+          }
           mailingLists {
             mailingList {
               name.set("Buildish Dev Mailing List")
@@ -74,7 +87,7 @@ publishing {
             developerConnection.set(scmUrl)
             url.set("$repoUrl/tree/main")
             if (!projectVersion.endsWith("-SNAPSHOT")) {
-              tag.set("buildish-atr-maven-bundle-$projectVersion")
+              tag.set("v$projectVersion")
             }
           }
           issueManagement {

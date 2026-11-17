@@ -1,0 +1,72 @@
+// Copyright 2026 The Buildish Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Deliberately separate from ../../build.gradle.kts: that build creates candidate
+// artifacts without publication credentials. This publisher runs from the trusted
+// workflow revision with Portal credentials and uploads retained candidate bytes.
+// Compilation and archive generation stay disabled, and retained POM/module bytes
+// replace generated metadata, so promotion preserves the approved artifacts.
+// Keep shared plugin identity and metadata consistent with
+// ../../gradle-plugin/build.gradle.kts.
+plugins { id 'com.gradle.plugin-publish' version '2.2.1' }
+
+group = 'org.buildish.atr-maven-bundle'
+version = providers.environmentVariable('RELEASE_VERSION').get()
+def retained = file(providers.environmentVariable('RELEASE_REPOSITORY').get())
+def implementationDir = new File(retained, "org/buildish/atr-maven-bundle/gradle-plugin/$version")
+def pluginId = 'org.buildish.atr-maven-bundle.gradle-plugin'
+def markerDir = new File(retained, "${pluginId.replace('.', '/')}/${pluginId}.gradle.plugin/$version")
+
+gradlePlugin {
+    website = 'https://buildish.org/components/atr-maven-bundle'
+    vcsUrl = 'https://github.com/buildish-tooling/buildish-atr-maven-bundle'
+    plugins {
+        atrMavenBundle {
+            id = pluginId
+            displayName = 'Buildish ATR Maven Bundle Plugin'
+            implementationClass = 'org.buildish.atrmavenbundle.gradleplugin.AtrMavenBundlePlugin'
+            description = displayName
+            tags.addAll('publishing', 'maven', 'atr', 'apache')
+        }
+    }
+}
+
+// Disable source compilation and all locally generated archive payloads.
+tasks.withType(AbstractCompile).configureEach { enabled = false }
+tasks.withType(Jar).configureEach { enabled = false }
+tasks.withType(Javadoc).configureEach { enabled = false }
+
+publishing {
+    repositories { maven { name = 'rehearsal'; url = layout.buildDirectory.dir('repository') } }
+    publications.withType(MavenPublication).configureEach {
+        if (name == 'pluginMaven') {
+            setArtifacts([])
+            artifact(new File(implementationDir, "gradle-plugin-${version}.jar"))
+            artifact(new File(implementationDir, "gradle-plugin-$version-sources.jar")) { classifier = 'sources' }
+            artifact(new File(implementationDir, "gradle-plugin-$version-javadoc.jar")) { classifier = 'javadoc' }
+        }
+    }
+}
+
+tasks.withType(GenerateMavenPom).configureEach {
+    doLast {
+        def original = name == 'generatePomFileForPluginMavenPublication' ?
+                new File(implementationDir, "gradle-plugin-${version}.pom") :
+                new File(markerDir, "${pluginId}.gradle.plugin-${version}.pom")
+        destination.bytes = original.bytes
+    }
+}
+tasks.withType(GenerateModuleMetadata).configureEach {
+    doLast { outputFile.get().asFile.bytes = new File(implementationDir, "gradle-plugin-${version}.module").bytes }
+}

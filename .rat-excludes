@@ -22,3 +22,5 @@
 /gradle/wrapper/gradle-wrapper-*.asc
 /gradle-plugin/stutter.lockfile
 /version.txt
+
+/docs/releases/**
