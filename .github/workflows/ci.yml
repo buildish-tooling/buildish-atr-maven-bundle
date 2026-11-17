@@ -52,7 +52,7 @@ jobs:
           overwrite-settings: false
 
       - name: Restore Gradle caches and provision wrapper
-        uses: buildish-tooling/buildish-mammoth-cache/actions/github/gradle@9794ba64b65fcdc6b12999f13de382aeb43fe5bf # v0.1.0
+        uses: buildish-tooling/buildish-mammoth-cache/actions/github/gradle@48994f88da02c380b39e717b8fa7aee7f57ce446 # v0.1.2
         with:
           wrapper-properties-files: gradle/wrapper/gradle-wrapper.properties
 
@@ -86,7 +86,7 @@ jobs:
           overwrite-settings: false
 
       - name: Restore Gradle caches and provision wrapper
-        uses: buildish-tooling/buildish-mammoth-cache/actions/github/gradle@9794ba64b65fcdc6b12999f13de382aeb43fe5bf # v0.1.0
+        uses: buildish-tooling/buildish-mammoth-cache/actions/github/gradle@48994f88da02c380b39e717b8fa7aee7f57ce446 # v0.1.2
         with:
           wrapper-properties-files: gradle/wrapper/gradle-wrapper.properties
 
