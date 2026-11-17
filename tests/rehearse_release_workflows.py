@@ -82,7 +82,7 @@ def prepare(args):
     (output / "registries").mkdir()
     (output / "registries/policy.json").write_text("{}\n")
     # Freeze actual component code, with a fixture version/notes and test signing key.
-    (frozen / "version.txt").write_text(VERSION + "\n")
+    (frozen / "version.txt").write_text(VERSION + "-SNAPSHOT\n")
     notes = frozen / f"buildish-release-tooling/release-notes/{VERSION}.md"
     notes.parent.mkdir(parents=True, exist_ok=True)
     notes.write_text("# Disposable rehearsal\nExact fixture source and artifacts.\n")

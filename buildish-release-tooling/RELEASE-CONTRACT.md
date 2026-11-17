@@ -47,7 +47,12 @@ selected-source build code with registry credentials.
 
 ## Identity and lifecycle choices
 
-- Exact stable version from committed `version.txt`; dispatch version must match.
+- Dispatch selects the exact stable version. Committed `version.txt` must contain
+  that version or the same version with `-SNAPSHOT`. The credential-free build job
+  writes the stable version only in its selected-source checkout before Gradle
+  runs; main and the reviewed source commit remain unchanged. Candidate and final
+  tags identify that original commit, so rebuilding from a tag requires the same
+  version-setting step. Promotion reuses the resulting candidate artifacts.
 - Source resolves once from the explicit ref or protected `main`; it must be an
   ancestor of main with successful `Required Checks` from `.github/workflows/ci.yml`,
   event `push`, branch `main`. The CI aggregator requires each essential job.

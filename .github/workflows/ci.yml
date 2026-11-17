@@ -129,13 +129,13 @@ jobs:
 
   required_checks:
     name: Required Checks
-    if: ${{ always() }}
+    if: ${{ !cancelled() }}
     needs:
       - check
       - windows-check
       - zizmor
       - release-check
-    runs-on: ubuntu-slim
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions: {}
     steps:
@@ -182,7 +182,7 @@ jobs:
       needs.required_checks.result == 'success' &&
       github.event_name == 'push' &&
       github.ref == 'refs/heads/main'
-    runs-on: ubuntu-slim
+    runs-on: ubuntu-26.04
     permissions: {}
     steps:
       - name: Dispatch aggregate site publishing

@@ -59,7 +59,11 @@ jobs:
         if [[ -n "$SOURCE_REF" ]]; then args+=("$SOURCE_REF"); fi
         bash buildish-release-tooling/release-tooling.sh resolve-candidate "${args[@]}"
         source="$(python3 -c 'import json,os; print(json.load(open(os.environ["MANIFEST_PATH"]))["source"]["commit_sha"])')"
-        test "$(git show "$source:version.txt" | tr -d '\n')" = "$RELEASE_VERSION"
+        source_version="$(git show "$source:version.txt")"
+        case "$source_version" in
+          "$RELEASE_VERSION"|"$RELEASE_VERSION-SNAPSHOT") ;;
+          *) printf 'Source version %s does not match release %s\n' "$source_version" "$RELEASE_VERSION" >&2; exit 1 ;;
+        esac
         MANIFEST_PATH="$RUNNER_TEMP/source-checks.json" bash buildish-release-tooling/release-tooling.sh verify-source-ref-checks "$RELEASE_VERSION" "$source"
         python3 -B buildish-release-tooling/workflow.py outputs "$MANIFEST_PATH"
       env:
@@ -110,6 +114,8 @@ jobs:
     - run: |
         set -euo pipefail
         python3 -B buildish-release-tooling/workflow.py digest "$RUNNER_TEMP/resolution/state.json" "$EXPECTED_DIGEST"
+        # Set the release version only in the credential-free selected-source checkout.
+        printf '%s\n' "$RELEASE_VERSION" > source/version.txt
         (cd source && ./gradlew --no-daemon --console=plain \
           -Dorg.gradle.java.installations.fromEnv=JAVA_HOME_17_X64,JAVA_HOME_21_X64 \
           -Dorg.gradle.java.installations.auto-download=false \

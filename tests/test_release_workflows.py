@@ -279,6 +279,9 @@ def test_release_job_permissions_source_and_status_policy():
     )
     assert 'MANIFEST_PATH="$RUNNER_TEMP/source-checks.json"' in resolve_script
     for target in ("central", "portal"):
+        assert (
+            promotion["jobs"]["publish-" + target]["environment"] == "release-candidate"
+        )
         assert "!cancelled()" in promotion["jobs"]["inspect-" + target]["if"]
         assert "!cancelled()" in promotion["jobs"]["publish-" + target]["if"]
         verify = promotion["jobs"]["verify-" + target]
@@ -307,6 +310,93 @@ def test_release_job_permissions_source_and_status_policy():
     assert "--require-manifest-digest" in commands
     assert commands.index("publish-github-final-release") < commands.index(
         "verify-github-final-release"
+    )
+
+
+@pytest.mark.parametrize(
+    ("source_version", "accepted"),
+    [
+        ("0.1.0", True),
+        ("0.1.0-SNAPSHOT", True),
+        ("0.2.0", False),
+        ("0.2.0-SNAPSHOT", False),
+    ],
+)
+def test_candidate_sets_build_version_without_changing_reviewed_source(
+    tmp_path, source_version, accepted
+):
+    candidate = yaml.safe_load(
+        (ROOT / ".github/workflows/release-candidate.yml").read_text()
+    )
+    scripts = {
+        job: "\n".join(step.get("run", "") for step in candidate["jobs"][job]["steps"])
+        for job in ("resolve", "build")
+    }
+    resolve = scripts["resolve"]
+    guard = resolve[
+        resolve.index("source_version=") : resolve.index(
+            'MANIFEST_PATH="$RUNNER_TEMP/source-checks.json"'
+        )
+    ]
+    version_step = next(
+        line for line in scripts["build"].splitlines() if "> source/version.txt" in line
+    )
+    assert scripts["build"].index("workflow.py digest") < scripts["build"].index(
+        version_step
+    )
+    assert scripts["build"].index(version_step) < scripts["build"].index("./gradlew")
+
+    git = [
+        "git",
+        "-C",
+        str(tmp_path),
+        "-c",
+        "user.name=Fixture",
+        "-c",
+        "user.email=fixture@example.invalid",
+        "-c",
+        "commit.gpgsign=false",
+        "-c",
+        "core.hooksPath=/dev/null",
+    ]
+    subprocess.check_output([*git, "init", "-b", "main"])
+    original = source_version + "\n"
+    (tmp_path / "version.txt").write_text(original)
+    subprocess.check_output([*git, "add", "version.txt"])
+    subprocess.check_output([*git, "commit", "-m", "Reviewed source"])
+    commit = subprocess.check_output([*git, "rev-parse", "HEAD"], text=True).strip()
+    selected = tmp_path / "source/version.txt"
+    selected.parent.mkdir()
+    selected.write_text(original)
+    env = {**os.environ, "source": commit, "RELEASE_VERSION": "0.1.0"}
+    result = subprocess.run(
+        ["bash", "-euo", "pipefail", "-c", guard],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert (result.returncode == 0) is accepted
+    if accepted:
+        subprocess.run(
+            ["bash", "-euo", "pipefail", "-c", version_step],
+            cwd=tmp_path,
+            env=env,
+            check=True,
+        )
+        assert selected.read_text() == "0.1.0\n"
+    else:
+        assert "does not match release" in result.stderr
+        assert selected.read_text() == original
+    assert (tmp_path / "version.txt").read_text() == original
+    assert (
+        subprocess.check_output([*git, "show", "HEAD:version.txt"], text=True)
+        == original
+    )
+    assert (
+        subprocess.check_output([*git, "rev-parse", "HEAD"], text=True).strip()
+        == commit
     )
 
 

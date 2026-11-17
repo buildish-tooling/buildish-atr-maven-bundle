@@ -17,9 +17,11 @@ limitations under the License.
 # Release readiness — 2026-11-17
 
 Current verdict: **local release rehearsal passed**; live first publication still
-requires the deployment prerequisites below. No hosted release was dispatched or
-published, no developer-worktree commit or push was made, and no remote settings
-were changed. Both Maven Central and the Gradle Plugin Portal are required. See
+requires the deployment prerequisites below. The base workflows and docs branch
+are deployed. The local `0.1.0` preparation keeps main at `0.1.0-SNAPSHOT` and adds
+release notes plus build-checkout version normalization. This preparation does
+not dispatch a release, publish artifacts or change remote settings. Both Maven
+Central and the Gradle Plugin Portal are required. See
 [contract](RELEASE-CONTRACT.md), [operator steps](RELEASE-PROCESS.md) and
 [docs maintenance](../tools/versioned-docs/README.md).
 
@@ -56,7 +58,7 @@ were changed. Both Maven Central and the Gradle Plugin Portal are required. See
   tests. Cached Gradle 9.8.2 also passed with and without the docs worktree.
   Build-version documentation now matches the 9.9.1 wrapper; consumer compatibility
   remains pinned to Gradle 9.1.0/Java 17 and 9.8.2/Java 21.
-- [x] Python suite: 41 tests plus 23 unittest subtests passed against installed 0.1.4.
+- [x] Python suite: 45 tests plus 23 unittest subtests passed against installed 0.1.4.
   Includes absent/partial/matching/conflicting registry
   states, transient polling, changed handoffs, archive inventory and independent
   shallow-clone fetch of an older final tag while HEAD stays on a newer workflow.
@@ -109,6 +111,14 @@ were changed. Both Maven Central and the Gradle Plugin Portal are required. See
   `c3ead8b78f1024d6f7deb7c9876009915975c2fa711158deb7b740993971dcef`.
   See `tests/rehearsal/README.md` for reproducible commands, fixture adaptations
   and evidence limits. The simulated version `1.2.3` is not a component release.
+- [x] Fresh candidate-only `0.1.0` rehearsal passed all four jobs with installed
+  0.1.4 and `gh act`. The committed/tagged source retained `0.1.0-SNAPSHOT`; only
+  the selected-source build checkout changed to `0.1.0`. Exported coordinates,
+  JAR `Implementation-Version`, consumer execution, signing and candidate
+  finalization passed. Evidence:
+  `build/release-0.1.0-candidate-rehearsal/results.json`. This is isolated candidate
+  evidence; it does not replace or extend the earlier promotion/recovery matrix
+  into a live-service claim.
 - [x] Docs-branch site trigger prepared locally, with source template
   `tools/versioned-docs/publish-site.yml`; fake-`gh` tests verify the exact aggregate
   dispatch and missing-token failure. Full-rebuild regression preserves it.
@@ -127,43 +137,53 @@ were changed. Both Maven Central and the Gradle Plugin Portal are required. See
 ## Hosted facts verified read-only
 
 - Public repository `buildish-tooling/buildish-atr-maven-bundle`, default `main`.
-  No hosted releases and no hosted `versioned-docs` branch at assessment.
+  No hosted releases were present at the latest readiness inspection. The
+  independent `versioned-docs` branch is now published at
+  `9b68f3ddbbc8e6400c5e25665c112116565e0d85`.
 - Active branch ruleset `25871960`: reviewed PR, linear history, deletion/force-push
   protection, GitHub Actions `Required Checks`. Admin/role bypasses exist.
 - Actions enabled, selected-action policy, SHA pinning required, default workflow
-  token read-only. The current CI workflow is active; release workflows are local
-  additions, not yet activated remotely. Recent main CI at
-  `8bd16f14f0f4e1b6a8a4e8fd6f789d92509b63a6` succeeded.
+  token read-only. CI, candidate and promotion workflows are active. The latest
+  inspected main CI run `44131197664` was still running; its release-workflow
+  checks passed. A new green push/main suite is required on the final preparation
+  commit; that older run cannot qualify subsequent changes.
 - `release-candidate` environment exists and restricts deployments to `main`, with
   no reviewer rule returned. Its secret names are
-  `BUILDISH_RELEASE_GPG_SECRET_SUBKEY` and `BUILDISH_RELEASE_GPG_PASSPHRASE`;
-  values were not read. No repository secrets/variables or environment variables
-  were returned. Org-secret inspection returned 403; inherited availability is
+  `BUILDISH_RELEASE_GPG_SECRET_SUBKEY`, `BUILDISH_RELEASE_GPG_PASSPHRASE`,
+  `CENTRAL_USERNAME`, `CENTRAL_PASSWORD`, `GRADLE_PUBLISH_KEY` and
+  `GRADLE_PUBLISH_SECRET`; values were not read. No repository secrets/variables
+  or environment variables were returned. Org-secret inspection returned 403; inherited availability is
   not verified. No permission/authentication changes were attempted.
-- `maven-central` and `gradle-plugin-portal` environments were absent. The repository
-  read did not expose a Release immutability setting; verify it manually.
+- All release mutation/upload jobs now use that existing `release-candidate`
+  environment. Separate upload environments are unnecessary. The repository read
+  did not expose a Release immutability setting; verify it manually.
 
 ## Required first-release actions
 
-- [ ] Merge/deploy workflows/config and release-preparation notes/version; obtain
-  successful trusted CI on the chosen exact source. Keep main-only deployment policy.
-- [ ] Establish Central namespace and Plugin Portal plugin ID/account ownership,
-  terms and credentials; create the two described upload environments.
+- [x] Base workflows deployed and active; all required signing and registry secret
+  names are present in `release-candidate`, with its main-only deployment policy.
+- [x] Draft `0.1.0` release notes prepared for maintainer review at
+  `release-notes/0.1.0.md`. Main's `version.txt` stays `0.1.0-SNAPSHOT`; the candidate
+  workflow accepts matching snapshot/stable source versions and sets `0.1.0` only
+  in the selected-source build checkout. Tags retain the reviewed source identity.
+- [ ] Commit/deploy the final preparation and obtain successful trusted push CI on
+  its exact source commit.
+- [ ] Confirm Central namespace and Plugin Portal plugin ID/account ownership,
+  accepted terms and initial Portal approval requirements. Secret names are not
+  evidence that the credentials or remote accounts are usable.
 - [ ] Approve and perform the isolated real-key usability check; publish the public key.
-- [ ] Confirm live action policy, draft write-token usability and immutability setting.
-- [x] Approved local `docs/releases/` worktree created on the unborn independent
-  `versioned-docs` branch, with one empty component inventory and the Mammoth-style site trigger.
-  Its source template is `tools/versioned-docs/publish-site.yml`. No commit, push or
-  historical docs import was performed; there are no completed releases to import.
-- [ ] Commit/publish that docs branch through separately authorized operations.
-  Make `BUILDISH_SITE_PUBLISH_TOKEN` (aggregate Actions write) available to the docs
-  branch before pushing; its workflow dispatches the aggregate site build on push.
-  Mandatory aggregate checkout otherwise blocks site publication, intentionally.
-- [ ] Author actual first-release notes and an unused stable `version.txt`, review
-  the candidate identity/digest and approve promotion. Validate every final job.
+- [ ] Confirm live draft write-token usability and GitHub Release immutability.
+- [x] Independent docs branch published with the component inventory and site trigger.
+  Confirm `BUILDISH_SITE_PUBLISH_TOKEN` (aggregate Actions write) is available to
+  that branch before relying on its aggregate-site dispatch; inherited secret
+  availability was not accessible through this inspection.
+- [ ] Authorize the `0.1.0` candidate dispatch from the reviewed, green source commit;
+  retain its exact tag and manifest digest, review artifacts/notes, then separately
+  authorize promotion. Require every essential final job to succeed.
 - [ ] After successful completion, manually import exact-tag docs, curate release
   selection/latest and deploy the separately owned aggregate site. Until deployment,
-  keep static development links explicitly marked unreleased.
+  keep static development links explicitly marked unreleased. Advance main to the
+  next development snapshot through a separate source change.
 
 Optional later work: automate the post-release docs update with separate write
 permissions, or upstream typed Central/Portal evidence adapters. Neither permits

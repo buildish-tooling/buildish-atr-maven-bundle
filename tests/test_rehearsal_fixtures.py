@@ -143,6 +143,7 @@ def test_rehearsal_keeps_production_job_graph_and_installed_package_path(tmp_pat
     ).read_bytes()
     assert not (frozen / "docs/releases").exists()
     assert not (frozen / "src/buildish_release_tooling").exists()
+    assert (frozen / "version.txt").read_text() == driver.VERSION + "-SNAPSHOT\n"
     assert json.loads((output / "registries/policy.json").read_text()) == {}
     scenario = driver.scenario(output, frozen, "candidate")
     expected = ["resolve", "build", "sign", "publish-candidate"]

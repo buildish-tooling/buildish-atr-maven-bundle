@@ -46,8 +46,8 @@ Its version and installation origin appear in every job log.
 ## What is real and what is adapted
 
 The driver freezes current tracked/non-ignored source files into a disposable main
-branch, supplies version `1.2.3` and fixture notes, and uses the harness's generated
-signing key. The production fingerprint is not replaced in the developer checkout.
+branch, supplies source version `1.2.3-SNAPSHOT` and fixture notes, and uses the
+harness's generated signing key. The production fingerprint is not replaced in the developer checkout.
 CI responses identify the configured GitHub Actions workflow/check suite; they are
 simulated provider observations, not evidence that hosted CI ran on the fixture.
 
@@ -119,3 +119,14 @@ preserved sealed SHA-256
 with zero GitHub asset uploads; all recovery cases performed zero registry uploads.
 The durable readiness summary and live deployment prerequisites are in
 `buildish-release-tooling/READINESS.md`. Generated fixture evidence is ignored by Git.
+
+The candidate fixture now commits `1.2.3-SNAPSHOT` and requests stable `1.2.3`,
+exercising the workflow's build-checkout version update. The earlier complete
+matrix used stable source versions. Its promotion/recovery evidence is retained;
+normalization requires a fresh candidate run rather than reusing that old source.
+
+The fresh `0.1.0` candidate-only run passed all four jobs with source/tag version
+`0.1.0-SNAPSHOT`, artifact/JAR version `0.1.0`, a real settings-plugin consumer,
+and fixture signing/publication. Its report is
+`build/release-0.1.0-candidate-rehearsal/results.json`; it used the installed 0.1.4
+wheel and did not publish to any live service.

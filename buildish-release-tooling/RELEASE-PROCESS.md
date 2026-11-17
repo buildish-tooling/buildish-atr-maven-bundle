@@ -43,14 +43,14 @@ commits, pushes or publication approval by itself.
    matching passphrase. Print no secrets and do not import into a normal keyring.
    Secret names alone are insufficient evidence. Publish the public key through
    the project's chosen trust channel before asking consumers to verify signatures.
-4. Create `maven-central` with main-only deployment and secrets `CENTRAL_USERNAME`
-   and `CENTRAL_PASSWORD` containing a Central Portal user token pair. Verify
+4. In the same `release-candidate` environment, set `CENTRAL_USERNAME` and
+   `CENTRAL_PASSWORD` to a Central Portal user token pair. Verify
    ownership of namespaces for both implementation/parent and plugin-marker groups,
    and the Central publishing terms. The upload requests `AUTOMATIC` publication.
-5. Create `gradle-plugin-portal` with main-only deployment and
-   `GRADLE_PUBLISH_KEY`/`GRADLE_PUBLISH_SECRET`. Establish the publisher account,
+5. Also in `release-candidate`, set `GRADLE_PUBLISH_KEY`/`GRADLE_PUBLISH_SECRET`.
+   Establish the publisher account,
    plugin ID ownership and accepted Portal terms; initial plugin approval may be
-   asynchronous. These credentials belong only to the Portal upload job. No OIDC
+   asynchronous. Only the Portal upload step receives these credentials. No OIDC
    or PyPI Trusted Publisher registration is needed for this composition.
 6. Confirm write permissions for tag/draft/final jobs, GitHub Release immutability,
    branch deployment policies and action availability in the live repository.
@@ -65,24 +65,18 @@ commits, pushes or publication approval by itself.
 
 ## Deployment commands for separate approval
 
-These change GitHub environments and secrets; they are not run by this adoption.
-For each new upload environment, create it and restrict dispatch deployments to
-main before adding credentials:
+The workflows share the existing main-only `release-candidate` environment for
+signing, tag/GitHub mutations and registry upload jobs. Its four registry secret
+names were verified on 2026-11-17. No separate upload environments are needed.
+If credentials need replacement, these separately authorized commands prompt for
+values; never put secret values in command arguments:
 
 ```sh
 repo=buildish-tooling/buildish-atr-maven-bundle
-for environment in maven-central gradle-plugin-portal; do
-  gh api --method PUT "repos/$repo/environments/$environment" \
-    -F 'deployment_branch_policy[protected_branches]=false' \
-    -F 'deployment_branch_policy[custom_branch_policies]=true'
-  gh api --method POST "repos/$repo/environments/$environment/deployment-branch-policies" \
-    -f name=main -f type=branch
-done
-# Each prompts for its value; do not put secret values in command arguments.
-gh secret set CENTRAL_USERNAME --repo "$repo" --env maven-central
-gh secret set CENTRAL_PASSWORD --repo "$repo" --env maven-central
-gh secret set GRADLE_PUBLISH_KEY --repo "$repo" --env gradle-plugin-portal
-gh secret set GRADLE_PUBLISH_SECRET --repo "$repo" --env gradle-plugin-portal
+gh secret set CENTRAL_USERNAME --repo "$repo" --env release-candidate
+gh secret set CENTRAL_PASSWORD --repo "$repo" --env release-candidate
+gh secret set GRADLE_PUBLISH_KEY --repo "$repo" --env release-candidate
+gh secret set GRADLE_PUBLISH_SECRET --repo "$repo" --env release-candidate
 ```
 
 These enable upload jobs after deployment; they do not establish namespace or plugin
@@ -90,9 +84,9 @@ ownership. If setup is wrong, correct the environment or replace/revoke the affe
 credential through a separately approved action. Do not delete publication state.
 Verify existing policy first rather than recreating a working environment.
 
-The locally approved docs worktree currently has an unstaged empty inventory and
-no commit. It also contains the prepared `.github/workflows/publish-site.yml` site trigger.
-Its initial publication, when approved, is:
+The initial `versioned-docs` branch is already published. For a new checkout that
+still needs initial publication, first prepare the inventory and site trigger as
+described in the docs maintenance guide. The separately authorized commands are:
 
 ```sh
 git -C docs/releases add provider-snapshot.json .github/workflows/publish-site.yml
@@ -138,11 +132,24 @@ or passphrase; do not weaken the fingerprint gate. Preserve only nonsecret resul
 
 ## Prepare each version and review a candidate
 
-Choose an unused stable version and commit it in `version.txt`. Add reviewed,
-nonempty UTF-8 Markdown at `buildish-release-tooling/release-notes/X.Y.Z.md`.
-No placeholder first-release notes are supplied: write notes for the actual source
-being released. Keep the final version in the candidate payload; `rcN` belongs to
-the candidate tag, not Maven coordinates.
+Choose an unused stable dispatch version `X.Y.Z`. Committed `version.txt` may
+contain either `X.Y.Z-SNAPSHOT` or `X.Y.Z`; a different version is rejected.
+Main can stay on the snapshot version. Before Gradle runs, the candidate build job
+writes `X.Y.Z` only in its isolated, credential-free selected-source checkout.
+Candidate and final tags still identify the original reviewed source commit.
+Promotion uploads the retained candidate artifacts without rebuilding them.
+
+Add reviewed, nonempty UTF-8 Markdown at
+`buildish-release-tooling/release-notes/X.Y.Z.md`. Initial `0.1.0` notes are supplied
+for maintainer review. The artifact version is stable; `rcN` belongs to the
+candidate tag, not Maven coordinates. After completing `0.1.0`, advance main to
+the next development snapshot through an ordinary source change.
+
+To reproduce a release build from its tag, use a disposable checkout and set its
+`version.txt` to the final version before running the same export tasks as the
+candidate build. For `v0.1.0` this is `printf '%s\n' 0.1.0 > version.txt`.
+This is a documented build preparation step; the workflow does not commit it or
+change the source identity recorded by the release tooling.
 
 Run the repository's normal `check` with the supported JDKs, then the release tests
 in an approved environment containing `buildish-release-tooling==0.1.4` and
