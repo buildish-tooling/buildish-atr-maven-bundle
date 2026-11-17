@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "providers": [],
+  "records": [],
+  "artifacts": [
+    {
+      "componentSlug": "atr-maven-bundle",
+      "artifactKey": "atr-maven-bundle"
+    }
+  ]
+}
