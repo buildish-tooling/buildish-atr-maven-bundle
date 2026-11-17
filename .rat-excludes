@@ -18,3 +18,4 @@ CODE_OF_CONDUCT.md
 .idea/.name
 .idea/copyright/ApacheLicense_v2.xml
 .idea/copyright/profiles_settings.xml
+gradle/wrapper/gradle-wrapper-*.asc
