@@ -45,6 +45,7 @@ kls_database.db
 .kotlin/
 build/
 !src/**/build/
+gradle/wrapper/gradle-wrapper-*.asc
 
 # jenv
 .java-version
