@@ -44,6 +44,7 @@ candidate:
 artifacts:
   produced:
     - maven-repository-zip
+  # Outer GitHub asset only; ATR Maven Bundle supplies four Maven checksum types inside.
   checksums:
     - sha256
     - sha512

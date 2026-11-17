@@ -25,9 +25,11 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+from http.client import IncompleteRead
 from pathlib import Path
+from urllib.parse import urlencode
 
-from workflow import PLUGIN, digest, primary_paths, read, write
+from workflow import PLUGIN, digest, primary_paths, read, signed_paths, write
 
 BASES = {
     "central": "https://repo.maven.apache.org/maven2/",
@@ -42,11 +44,7 @@ def expected_files(repository, version, target):
         # Parent POM is published only to Central. Portal may serve it by redirect.
         names = {name for name in names if "/buildish-atr-maven-bundle/" not in name}
     else:
-        names = {
-            name + suffix
-            for name in names
-            for suffix in ("", ".asc", ".sha256", ".sha512")
-        }
+        names = signed_paths(version)
     return {name: repository / name for name in sorted(names)}
 
 
@@ -80,7 +78,12 @@ def inspect(repository, version, target, fetch=None, deadline=None):
                     f"Plugin Portal registration HTTP {error.code}"
                 ) from None
             portal_absent = True
-        except (urllib.error.URLError, TimeoutError) as error:
+        except (
+            urllib.error.URLError,
+            TimeoutError,
+            ConnectionError,
+            IncompleteRead,
+        ) as error:
             raise ConnectionError(
                 "Transient Portal registration read failure"
             ) from error
@@ -97,7 +100,12 @@ def inspect(repository, version, target, fetch=None, deadline=None):
             if error.code in (408, 429) or error.code >= 500:
                 raise ConnectionError(f"Transient {target} HTTP {error.code}") from None
             raise ValueError(f"{target} HTTP {error.code} for {name}") from None
-        except (urllib.error.URLError, TimeoutError) as error:
+        except (
+            urllib.error.URLError,
+            TimeoutError,
+            ConnectionError,
+            IncompleteRead,
+        ) as error:
             raise ConnectionError(f"Transient {target} read failure") from error
         if len(observed) != path.stat().st_size or hashlib.sha256(
             observed
@@ -162,12 +170,82 @@ def upload_central(archive, result):
     try:
         with urllib.request.urlopen(request, timeout=120) as response:
             deployment = response.read().decode().strip()
-    except (urllib.error.URLError, TimeoutError):
+    except (urllib.error.URLError, TimeoutError, ConnectionError, IncompleteRead):
         # Do not print request headers, credential-bearing exception details, or retry uploads.
         raise ValueError(
             "Central upload failed or timed out; inspect Portal deployments before retrying"
         ) from None
     write(result, {"deployment_id": deployment, "bundle_sha256": digest(archive)})
+
+
+def wait_central(result, attempts=91, retry_delay=10, total_timeout=960):
+    record = read(result)
+    deployment = record["deployment_id"]
+    if not deployment:
+        raise ValueError("Central did not return a deployment ID")
+    token = base64.b64encode(
+        f"{os.environ['CENTRAL_USERNAME']}:{os.environ['CENTRAL_PASSWORD']}".encode()
+    ).decode()
+    deadline = time.monotonic() + total_timeout
+    for attempt in range(attempts):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        request = urllib.request.Request(
+            "https://central.sonatype.com/api/v1/publisher/status?"
+            + urlencode({"id": deployment}),
+            data=b"",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        try:
+            with urllib.request.urlopen(
+                request, timeout=min(30, remaining)
+            ) as response:
+                status = json.load(response)
+            if not isinstance(status, dict):
+                raise TypeError("Central status response is not an object")
+            if status.get("deploymentId") != deployment:
+                raise ValueError("Central status returned a different deployment ID")
+            state = status.get("deploymentState")
+            if state not in {
+                "PENDING",
+                "VALIDATING",
+                "VALIDATED",
+                "PUBLISHING",
+                "PUBLISHED",
+                "FAILED",
+            }:
+                raise ValueError(f"Unknown Central deployment state: {state}")
+            if state != record.get("deployment_state"):
+                print(f"Central deployment {deployment}: {state}", flush=True)
+            record["deployment_state"] = state
+            record["errors"] = status.get("errors", {})
+            write(result, record)
+            if state == "FAILED":
+                raise ValueError(
+                    f"Central deployment {deployment} failed: {json.dumps(status.get('errors', {}), sort_keys=True)}"
+                )
+            if state == "PUBLISHED":
+                return
+        except urllib.error.HTTPError as error:
+            if error.code not in (404, 408, 429) and error.code < 500:
+                raise ValueError(
+                    f"Central deployment status HTTP {error.code}"
+                ) from None
+        except (
+            urllib.error.URLError,
+            TimeoutError,
+            ConnectionError,
+            IncompleteRead,
+            json.JSONDecodeError,
+        ):
+            pass
+        if attempt + 1 == attempts or time.monotonic() + retry_delay >= deadline:
+            break
+        time.sleep(retry_delay)
+    raise ValueError(
+        f"Central deployment {deployment} not published within verification budget; inspect the retained receipt and Portal deployment"
+    )
 
 
 def evidence(state_path, central_path, portal_path, destination):
@@ -210,6 +288,11 @@ def main():
     sub = commands.add_parser("upload-central")
     sub.add_argument("archive")
     sub.add_argument("result")
+    sub = commands.add_parser("wait-central")
+    sub.add_argument("result")
+    sub.add_argument("--attempts", type=int, default=91)
+    sub.add_argument("--retry-delay", type=float, default=10)
+    sub.add_argument("--total-timeout", type=float, default=960)
     sub = commands.add_parser("evidence")
     sub.add_argument("paths", nargs=4)
     args = parser.parse_args()
@@ -227,6 +310,8 @@ def main():
         )
     elif args.command == "upload-central":
         upload_central(args.archive, args.result)
+    elif args.command == "wait-central":
+        wait_central(args.result, args.attempts, args.retry_delay, args.total_timeout)
     else:
         evidence(*args.paths)
 

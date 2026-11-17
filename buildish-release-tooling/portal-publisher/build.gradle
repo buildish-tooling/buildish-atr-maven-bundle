@@ -12,19 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Deliberately separate from ../../build.gradle.kts: that build creates candidate
-// artifacts without publication credentials. This publisher runs from the trusted
-// workflow revision with Portal credentials and uploads retained candidate bytes.
-// Compilation and archive generation stay disabled, and retained POM/module bytes
-// replace generated metadata, so promotion preserves the approved artifacts.
-// Keep shared plugin identity and metadata consistent with
-// ../../gradle-plugin/build.gradle.kts.
-plugins { id 'com.gradle.plugin-publish' version '2.2.1' }
+// Deliberately separate from ../../build.gradle.kts: that build creates payloads
+// without credentials. Here, -PbuildCentralBundle uses a plugin built from the
+// trusted workflow revision to sign files, complete checksums and create the ZIP.
+// Portal promotion uploads the retained candidate without loading that plugin.
+// Payload compilation/JAR generation remain disabled in both modes. Keep shared
+// plugin identity consistent with ../../gradle-plugin/build.gradle.kts.
+plugins {
+    id 'com.gradle.plugin-publish' version '2.2.1'
+}
 
+def bundleMode = providers.gradleProperty('buildCentralBundle').isPresent()
 group = 'org.buildish.atr-maven-bundle'
 version = providers.environmentVariable('RELEASE_VERSION').get()
 def retained = file(providers.environmentVariable('RELEASE_REPOSITORY').get())
 def implementationDir = new File(retained, "org/buildish/atr-maven-bundle/gradle-plugin/$version")
+def parentDir = new File(retained, "org/buildish/atr-maven-bundle/buildish-atr-maven-bundle/$version")
 def pluginId = 'org.buildish.atr-maven-bundle.gradle-plugin'
 def markerDir = new File(retained, "${pluginId.replace('.', '/')}/${pluginId}.gradle.plugin/$version")
 
@@ -49,6 +52,11 @@ tasks.withType(Javadoc).configureEach { enabled = false }
 
 publishing {
     repositories { maven { name = 'rehearsal'; url = layout.buildDirectory.dir('repository') } }
+    publications {
+        if (bundleMode) {
+            releaseParent(MavenPublication) { artifactId = 'buildish-atr-maven-bundle' }
+        }
+    }
     publications.withType(MavenPublication).configureEach {
         if (name == 'pluginMaven') {
             setArtifacts([])
@@ -61,7 +69,9 @@ publishing {
 
 tasks.withType(GenerateMavenPom).configureEach {
     doLast {
-        def original = name == 'generatePomFileForPluginMavenPublication' ?
+        def original = name == 'generatePomFileForReleaseParentPublication' ?
+                new File(parentDir, "buildish-atr-maven-bundle-${version}.pom") :
+                name == 'generatePomFileForPluginMavenPublication' ?
                 new File(implementationDir, "gradle-plugin-${version}.pom") :
                 new File(markerDir, "${pluginId}.gradle.plugin-${version}.pom")
         destination.bytes = original.bytes
@@ -69,4 +79,19 @@ tasks.withType(GenerateMavenPom).configureEach {
 }
 tasks.withType(GenerateModuleMetadata).configureEach {
     doLast { outputFile.get().asFile.bytes = new File(implementationDir, "gradle-plugin-${version}.module").bytes }
+}
+
+if (bundleMode) {
+    // ATR Maven Bundle signs after export; Plugin Publish must not sign a second time.
+    tasks.withType(org.gradle.plugins.signing.Sign).configureEach { enabled = false }
+    signing {
+        def key = providers.environmentVariable('BUILDISH_GPG_PRIVATE_KEY').get()
+        def password = providers.environmentVariable('BUILDISH_GPG_PASSPHRASE').getOrElse('')
+        def fingerprint = providers.environmentVariable('BUILDISH_GPG_FINGERPRINT').getOrElse('')
+        if (fingerprint) {
+            useInMemoryPgpKeys(fingerprint.takeRight(8), key, password)
+        } else {
+            useInMemoryPgpKeys(key, password)
+        }
+    }
 }

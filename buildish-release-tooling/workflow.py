@@ -32,6 +32,7 @@ REPOSITORY = "buildish-tooling/buildish-atr-maven-bundle"
 VERSION = r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"
 PLUGIN = "org.buildish.atr-maven-bundle.gradle-plugin"
 GROUP = "org/buildish/atr-maven-bundle"
+MAVEN_CHECKSUMS = ("md5", "sha1", "sha256", "sha512")
 
 
 def read(path):
@@ -149,6 +150,27 @@ def asset_names(version):
     }
 
 
+def signed_paths(version):
+    return {
+        name + suffix
+        for name in primary_paths(version)
+        for suffix in ("", ".asc", *("." + algorithm for algorithm in MAVEN_CHECKSUMS))
+    }
+
+
+def validate_maven_checksums(repository, version):
+    repository = Path(repository)
+    for name in primary_paths(version):
+        data = (repository / name).read_bytes()
+        for algorithm in MAVEN_CHECKSUMS:
+            sidecar = repository / (name + "." + algorithm)
+            if (
+                sidecar.read_text(encoding="ascii").strip()
+                != hashlib.new(algorithm, data).hexdigest()
+            ):
+                raise ValueError(f"Invalid Maven {algorithm} checksum: {name}")
+
+
 def export_repository(source, destination, version):
     source, destination = Path(source), Path(destination)
     expected = primary_paths(version)
@@ -171,69 +193,76 @@ def export_repository(source, destination, version):
         shutil.copyfile(actual[name], target)
 
 
-def sign_repository(source, destination, version):
-    source, destination = Path(source), Path(destination)
-    entries = files(source)
-    if entries.keys() != primary_paths(version):
-        raise ValueError("Unsigned repository differs from release contract")
-    if len({path.name for path in entries.values()}) != len(entries):
-        raise ValueError("Signing inputs have duplicate basenames")
+def verify_bundle(repository, archive, version, fingerprint=""):
+    """Check native packaging preserved payloads and signed with the approved key."""
     with tempfile.TemporaryDirectory() as temporary:
-        # The supported CLI signs opaque files without running selected-source build code.
-        subprocess.run(
-            [
-                "bash",
-                str(ROOT / "release-tooling.sh"),
-                "prepare-release-assets",
-                "--output-dir",
-                temporary,
-                *map(str, entries.values()),
-            ],
-            check=True,
-        )
-        for name, source_path in entries.items():
-            target = destination / name
-            target.parent.mkdir(parents=True, exist_ok=True)
-            for suffix in ("", ".asc", ".sha256", ".sha512"):
-                shutil.copyfile(
-                    Path(temporary) / (source_path.name + suffix),
-                    Path(str(target) + suffix),
+        temporary = Path(temporary)
+        unpack(archive, temporary / "repository", version)
+        keyring = temporary / "keyring"
+        keyring.mkdir(mode=0o700)
+        gpg = ["gpg", "--no-options", "--homedir", str(keyring), "--batch"]
+        try:
+            subprocess.run(
+                [*gpg, "--import"],
+                input=os.environ["BUILDISH_GPG_PRIVATE_KEY"].encode(),
+                check=True,
+                capture_output=True,
+            )
+            for name in primary_paths(version):
+                retained = Path(repository) / name
+                packaged = temporary / "repository" / name
+                if retained.read_bytes() != packaged.read_bytes():
+                    raise ValueError(f"Bundling changed retained primary file: {name}")
+                result = subprocess.run(
+                    [
+                        *gpg,
+                        "--status-fd=1",
+                        "--verify",
+                        str(packaged) + ".asc",
+                        str(packaged),
+                    ],
+                    check=True,
+                    capture_output=True,
+                    text=True,
                 )
-
-
-def pack(source, archive, version):
-    entries = files(source)
-    expected = {
-        name + suffix
-        for name in primary_paths(version)
-        for suffix in ("", ".asc", ".sha256", ".sha512")
-    }
-    if entries.keys() != expected:
-        raise ValueError("Signed repository differs from release contract")
-    Path(archive).parent.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(archive, "x", compression=zipfile.ZIP_DEFLATED) as output_zip:
-        for name, path in entries.items():
-            info = zipfile.ZipInfo(name, (1980, 2, 1, 0, 0, 0))
-            info.external_attr = 0o100644 << 16
-            info.compress_type = zipfile.ZIP_DEFLATED
-            output_zip.writestr(info, path.read_bytes())
+                signatures = [
+                    line.split()[2:]
+                    for line in result.stdout.splitlines()
+                    if line.startswith("[GNUPG:] VALIDSIG ")
+                ]
+                if len(signatures) != 1 or (
+                    fingerprint
+                    and fingerprint.upper() not in (signatures[0][0], signatures[0][-1])
+                ):
+                    raise ValueError(f"Unexpected release signing fingerprint: {name}")
+        finally:
+            subprocess.run(
+                ["gpgconf", "--homedir", str(keyring), "--kill", "all"],
+                check=False,
+                capture_output=True,
+            )
 
 
 def unpack(archive, destination, version):
     destination = Path(destination)
-    expected = {
-        name + suffix
-        for name in primary_paths(version)
-        for suffix in ("", ".asc", ".sha256", ".sha512")
-    }
+    expected = signed_paths(version)
     with zipfile.ZipFile(archive) as contents:
+        entries = [item for item in contents.infolist() if not item.is_dir()]
         if (
-            len(contents.namelist()) != len(expected)
-            or set(contents.namelist()) != expected
+            len(entries) != len(expected)
+            or {item.filename for item in entries} != expected
         ):
             raise ValueError("Maven ZIP inventory differs from contract")
         for item in contents.infolist():
             name = PurePosixPath(item.filename)
+            if item.is_dir():
+                if (
+                    name.is_absolute()
+                    or ".." in name.parts
+                    or not any(name in PurePosixPath(path).parents for path in expected)
+                ):
+                    raise ValueError("Unexpected Maven ZIP directory")
+                continue
             if (
                 name.is_absolute()
                 or ".." in name.parts
@@ -244,11 +273,7 @@ def unpack(archive, destination, version):
             path.parent.mkdir(parents=True, exist_ok=True)
             with path.open("xb") as stream:
                 stream.write(contents.read(item))
-    for name in primary_paths(version):
-        check_digest(
-            destination / name,
-            (destination / (name + ".sha256")).read_text().split()[0],
-        )
+    validate_maven_checksums(destination, version)
 
 
 def download(manifest, expected, destination, version):
@@ -321,8 +346,7 @@ def main():
             "verify",
             "digest",
             "export",
-            "sign",
-            "pack",
+            "verify-bundle",
             "unpack",
             "download",
             "fetch-tag",
@@ -337,8 +361,7 @@ def main():
         "verify": verify,
         "digest": check_digest,
         "export": export_repository,
-        "sign": sign_repository,
-        "pack": pack,
+        "verify-bundle": verify_bundle,
         "unpack": unpack,
         "download": download,
         "fetch-tag": fetch_tag,

@@ -12,4 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Only candidate packaging loads ATR Maven Bundle, from the digest-bound build
+// of the trusted workflow revision. Portal promotion only uploads retained bytes.
+buildscript {
+    if (providers.gradleProperty('buildCentralBundle').isPresent()) {
+        repositories {
+            maven { url = uri(providers.environmentVariable('RELEASE_TOOLING_REPOSITORY').get()) }
+        }
+        dependencies {
+            classpath "org.buildish.atr-maven-bundle:gradle-plugin:${providers.environmentVariable('RELEASE_VERSION').get()}"
+        }
+    }
+}
+
+if (providers.gradleProperty('buildCentralBundle').isPresent()) {
+    apply plugin: 'org.buildish.atr-maven-bundle.gradle-plugin'
+    atrMavenBundle {
+        baseName.set('buildish-atr-maven-bundle')
+        bundleVersion.set(providers.environmentVariable('RELEASE_VERSION').get())
+        signMissing.set(true)
+    }
+}
+
 rootProject.name = 'gradle-plugin'

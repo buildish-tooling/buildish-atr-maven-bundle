@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import io
 import json
 import os
@@ -27,7 +28,7 @@ import zipfile
 from email.parser import BytesParser
 from email.policy import default
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 ROOT_ENV = "ATR_REHEARSAL_REGISTRY_ROOT"
 HOSTS = {"repo.maven.apache.org": "central", "plugins.gradle.org": "portal"}
@@ -51,6 +52,26 @@ class Response(io.BytesIO):
         return self.url
 
 
+def central_validation_errors(files):
+    """Independent Central checksum/signature-presence admission fixture."""
+    errors = {}
+    for name, data in files.items():
+        if not name.endswith((".jar", ".pom", ".module")):
+            continue
+        problems = []
+        if not files.get(name + ".asc"):
+            problems.append("Missing signature")
+        for algorithm in ("md5", "sha1", "sha256", "sha512"):
+            sidecar = files.get(name + "." + algorithm)
+            if sidecar is None:
+                problems.append(f"Missing {algorithm} checksum")
+            elif sidecar.strip() != hashlib.new(algorithm, data).hexdigest().encode():
+                problems.append(f"Invalid {algorithm} checksum")
+        if problems:
+            errors[name] = problems
+    return errors
+
+
 def urlopen(request, timeout=None, **kwargs):
     url = request.full_url if isinstance(request, urllib.request.Request) else request
     parsed = urlsplit(url)
@@ -58,14 +79,45 @@ def urlopen(request, timeout=None, **kwargs):
         request.get_method() if isinstance(request, urllib.request.Request) else "GET"
     )
     if parsed.hostname == "central.sonatype.com":
+        if request.get_header("Authorization") is None:
+            raise ValueError("Central request omitted authorization")
+        if method == "POST" and parsed.path == "/api/v1/publisher/status":
+            if parse_qs(parsed.query) != {"id": ["fixture-central-deployment"]}:
+                raise ValueError("Unexpected deployment ID")
+            policy = (
+                json.loads((root() / "policy.json").read_text())
+                if (root() / "policy.json").exists()
+                else {}
+            )
+            errors = json.loads((root() / "central-validation-errors.json").read_text())
+            errors = errors or policy.get("deployment_errors", {})
+            states = policy.get(
+                "deployment_states", ["PENDING", "PUBLISHING", "PUBLISHED"]
+            )
+            index = int((root() / "deployment-status-index").read_text())
+            state = "FAILED" if errors else states[min(index, len(states) - 1)]
+            (root() / "deployment-status-index").write_text(str(index + 1))
+            if state == "PUBLISHED":
+                shutil.copytree(
+                    root() / "central-staged", root() / "central", dirs_exist_ok=True
+                )
+            record("deployment-status", state=state)
+            return Response(
+                json.dumps(
+                    {
+                        "deploymentId": "fixture-central-deployment",
+                        "deploymentState": state,
+                        "errors": errors,
+                    }
+                ).encode(),
+                url,
+            )
         if (
             method != "POST"
             or parsed.path != "/api/v1/publisher/upload"
             or parsed.query != "publishingType=AUTOMATIC"
         ):
             raise ValueError("Unexpected Central fixture operation")
-        if request.get_header("Authorization") is None:
-            raise ValueError("Central upload omitted authorization")
         headers = f"Content-Type: {request.get_header('Content-type')}\r\nMIME-Version: 1.0\r\n\r\n".encode()
         message = BytesParser(policy=default).parsebytes(headers + request.data)
         bundles = [
@@ -76,17 +128,29 @@ def urlopen(request, timeout=None, **kwargs):
         if len(bundles) != 1:
             raise ValueError("Expected one multipart Central bundle")
         with zipfile.ZipFile(io.BytesIO(bundles[0])) as archive:
+            files = {
+                item.filename: archive.read(item)
+                for item in archive.infolist()
+                if not item.is_dir()
+            }
             for item in archive.infolist():
                 relative = Path(item.filename)
                 if relative.is_absolute() or ".." in relative.parts:
                     raise ValueError("Unsafe fixture upload")
-                destination = root() / "central" / relative
+                if item.is_dir():
+                    continue
+                destination = root() / "central-staged" / relative
                 data = archive.read(item)
-                if destination.exists() and destination.read_bytes() != data:
+                published = root() / "central" / relative
+                if published.exists() and published.read_bytes() != data:
                     raise ValueError("Conflicting Central upload")
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 destination.write_bytes(data)
-        record("upload-central", files=len(archive.namelist()))
+        (root() / "central-validation-errors.json").write_text(
+            json.dumps(central_validation_errors(files))
+        )
+        (root() / "deployment-status-index").write_text("0")
+        record("upload-central", files=len(files))
         return Response(b"fixture-central-deployment", url)
     if parsed.hostname not in HOSTS or method != "GET":
         raise ValueError(

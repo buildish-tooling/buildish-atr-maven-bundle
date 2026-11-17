@@ -14,11 +14,13 @@
 
 """Provider fixtures and the independently published documentation trigger."""
 
+import hashlib
 import importlib.util
 import io
 import json
 import os
 import subprocess
+import sys
 import urllib.error
 import urllib.request
 import zipfile
@@ -40,7 +42,14 @@ def test_central_upload_readback_partial_conflict_and_outage(tmp_path, monkeypat
     monkeypatch.setenv(fixture.ROOT_ENV, str(tmp_path))
     content = io.BytesIO()
     with zipfile.ZipFile(content, "w") as archive:
-        archive.writestr("org/example/1.2.3/plugin.jar", b"approved JAR")
+        archive.writestr("org/", b"")
+        name, data = "org/example/1.2.3/plugin.jar", b"approved JAR"
+        archive.writestr(name, data)
+        archive.writestr(name + ".asc", b"fixture signature")
+        for algorithm in ("md5", "sha1", "sha256", "sha512"):
+            archive.writestr(
+                name + "." + algorithm, hashlib.new(algorithm, data).hexdigest()
+            )
     boundary = "fixture-boundary"
     body = (
         f'--{boundary}\r\nContent-Disposition: form-data; name="bundle"; filename="bundle.zip"\r\nContent-Type: application/zip\r\n\r\n'.encode()
@@ -57,6 +66,18 @@ def test_central_upload_readback_partial_conflict_and_outage(tmp_path, monkeypat
     )
     assert fixture.urlopen(request).read() == b"fixture-central-deployment"
     url = "https://repo.maven.apache.org/maven2/org/example/1.2.3/plugin.jar"
+    with pytest.raises(urllib.error.HTTPError):
+        fixture.urlopen(url)
+    status_request = urllib.request.Request(
+        "https://central.sonatype.com/api/v1/publisher/status?id=fixture-central-deployment",
+        data=b"",
+        headers={"Authorization": "Bearer fixture-only"},
+    )
+    states = [
+        json.loads(fixture.urlopen(status_request).read())["deploymentState"]
+        for _ in range(3)
+    ]
+    assert states == ["PENDING", "PUBLISHING", "PUBLISHED"]
     assert fixture.urlopen(url).read() == b"approved JAR"
     policy = tmp_path / "policy.json"
     monkeypatch.setenv("BUILDISH_HARNESS_JOB_ID", "inspect-central")
@@ -72,6 +93,77 @@ def test_central_upload_readback_partial_conflict_and_outage(tmp_path, monkeypat
     with pytest.raises(urllib.error.HTTPError) as error:
         fixture.urlopen(url)
     assert error.value.code == 503
+
+
+def test_central_admission_rejects_the_original_checksum_contract():
+    name, data = "plugin.jar", b"approved bytes"
+    files = {name: data, name + ".asc": b"fixture signature"}
+    for algorithm in ("sha256", "sha512"):
+        files[name + "." + algorithm] = (
+            hashlib.new(algorithm, data).hexdigest() + "  plugin.jar\n"
+        ).encode()
+    assert fixture.central_validation_errors(files) == {
+        name: [
+            "Missing md5 checksum",
+            "Missing sha1 checksum",
+            "Invalid sha256 checksum",
+            "Invalid sha512 checksum",
+        ]
+    }
+
+
+def test_accepted_upload_then_failed_validation_fails_the_real_client(tmp_path):
+    archive = tmp_path / "rejected.zip"
+    data, name = b"approved bytes", "org/example/1.2.3/plugin.jar"
+    with zipfile.ZipFile(archive, "w") as contents:
+        contents.writestr(name, data)
+        contents.writestr(name + ".asc", b"fixture signature")
+        for algorithm in ("sha256", "sha512"):
+            contents.writestr(
+                name + "." + algorithm,
+                hashlib.new(algorithm, data).hexdigest() + "  plugin.jar\n",
+            )
+    env = {
+        **os.environ,
+        fixture.ROOT_ENV: str(tmp_path),
+        "PYTHONPATH": str(ROOT / "tests/rehearsal"),
+        "CENTRAL_USERNAME": "fixture-user",
+        "CENTRAL_PASSWORD": "fixture-token",
+    }
+    client = [sys.executable, str(ROOT / "buildish-release-tooling/registries.py")]
+    receipt = tmp_path / "receipt.json"
+    subprocess.run(
+        [*client, "upload-central", str(archive), str(receipt)],
+        env=env,
+        check=True,
+        capture_output=True,
+    )
+    result = subprocess.run(
+        [
+            *client,
+            "wait-central",
+            str(receipt),
+            "--attempts",
+            "3",
+            "--retry-delay",
+            "0",
+        ],
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "Missing md5 checksum" in result.stderr
+    assert "Invalid sha256 checksum" in result.stderr
+    assert json.loads(receipt.read_text())["deployment_state"] == "FAILED"
+    assert not (tmp_path / "central").exists()
+    events = [
+        json.loads(line)
+        for line in (tmp_path / "events.jsonl").read_text().splitlines()
+    ]
+    assert sum(event["event"] == "upload-central" for event in events) == 1
+    assert "fixture-token" not in result.stderr
 
 
 def test_docs_branch_trigger_uses_only_the_aggregate_token(tmp_path):
@@ -146,7 +238,7 @@ def test_rehearsal_keeps_production_job_graph_and_installed_package_path(tmp_pat
     assert (frozen / "version.txt").read_text() == driver.VERSION + "-SNAPSHOT\n"
     assert json.loads((output / "registries/policy.json").read_text()) == {}
     scenario = driver.scenario(output, frozen, "candidate")
-    expected = ["resolve", "build", "sign", "publish-candidate"]
+    expected = ["resolve", "build", "build-tooling", "sign", "publish-candidate"]
     driver.assert_selected_jobs({"selected_job_ids": expected}, scenario)
     for selected in ([], expected[:-1]):
         with pytest.raises(AssertionError):

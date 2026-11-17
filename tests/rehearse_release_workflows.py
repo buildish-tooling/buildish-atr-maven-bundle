@@ -392,6 +392,86 @@ def set_policy(output, policy):
     (output / "registries/policy.json").write_text(json.dumps(policy) + "\n")
 
 
+def rejected_central_deployment(output, frozen, candidate):
+    """Exercise accepted-upload/failed-validation with its own empty registry."""
+    fork = output / "failed-central-state"
+    source = fork / "source"
+    if not source.exists():
+        fork.mkdir()
+        shutil.copytree(frozen, source)
+        (fork / "registries").mkdir()
+        set_policy(
+            fork,
+            {
+                "deployment_errors": {
+                    "bundle": ["Fixture Central validation rejected deployment"]
+                }
+            },
+        )
+        actrc = source / ".actrc"
+        actrc.write_text(
+            actrc.read_text().replace(
+                str(output / "registries"), str(fork / "registries")
+            )
+        )
+        path = source / ".github/workflows/release-promote.yml"
+        workflow = yaml.safe_load(path.read_text())
+        workflow["name"] += " Failed Central validation"
+        dump(path, workflow)
+        dump(
+            fork / "release-harness.yaml",
+            {
+                "schema_version": "1",
+                "self_repository": {
+                    "repository_id": REPOSITORY,
+                    "local_path": str(source),
+                    "local_checkout_mode": "when_repository_omitted",
+                },
+            },
+        )
+    name = "failed-central-validation"
+    if (fork / (name + ".json")).exists():
+        workspace, report = audit_retained_report(
+            fork, name, expected_failure="publish-central"
+        )
+    else:
+        workspace, report = run(
+            fork,
+            scenario(fork, source, name, promotion=True),
+            seed=candidate,
+            expected_failure="publish-central",
+        )
+    assert all(
+        report["actual_job_statuses"][job] == "not-executed"
+        for job in (
+            "verify-central",
+            "inspect-portal",
+            "publish-portal",
+            "verify-portal",
+            "publish",
+        )
+    )
+    assert not (fork / "registries/central").exists()
+    receipts = list(
+        workspace.glob(
+            ".buildish-release-harness/workflow-artifacts/central-deployment-*/result.json"
+        )
+    )
+    assert len(receipts) == 1
+    receipt = json.loads(receipts[0].read_text())
+    assert receipt["deployment_state"] == "FAILED" and receipt["errors"]
+    assert report["github_asset_uploads"] == 0
+    result = {
+        "live_publication": False,
+        "actual_job_statuses": report["actual_job_statuses"],
+        "retained_receipt": receipt,
+        "registry_uploads": uploads(fork),
+        "github_asset_uploads": 0,
+    }
+    (fork / "results.json").write_text(json.dumps(result, indent=2) + "\n")
+    return result
+
+
 def audit_retained_report(output, name, *, expected_failure=None):
     """Inspect actual records when continuing reports made before driver updates."""
     path = output / (name + ".json")
@@ -534,6 +614,7 @@ def main():
         progress_path.write_text(json.dumps(progress, indent=2))
         print(f"{name}: verified {report['actual_job_statuses']}", flush=True)
     set_policy(output, {})
+    central_failure = rejected_central_deployment(output, frozen, candidate)
     cases = {}
     for name in progress:
         report = json.loads((output / (name + ".json")).read_text())
@@ -551,6 +632,7 @@ def main():
                 "sealed_manifest_digest": sealed_digest,
                 "registry_uploads": uploads(output),
                 "cases": cases,
+                "central_validation_failure": central_failure,
             },
             indent=2,
         )
@@ -569,12 +651,13 @@ if __name__ == "__main__":
             if "--output" in sys.argv
             else ROOT / "build/workflow-rehearsal"
         )
-        for home in output.glob(
-            "runs/*/.buildish-release-harness/gpg-fixture/source-home"
-        ):
-            subprocess.run(
-                ["gpgconf", "--homedir", str(home), "--kill", "all"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                check=False,
-            )
+        for fixture_root in (output, output / "failed-central-state"):
+            for home in fixture_root.glob(
+                "runs/*/.buildish-release-harness/gpg-fixture/source-home"
+            ):
+                subprocess.run(
+                    ["gpgconf", "--homedir", str(home), "--kill", "all"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                )

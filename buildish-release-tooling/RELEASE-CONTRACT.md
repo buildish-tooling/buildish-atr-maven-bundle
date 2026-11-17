@@ -31,19 +31,38 @@ bundles to ATR, Central or Njord.
 
 The ZIP contains seven primary files: parent POM; plugin POM, module metadata,
 shaded implementation JAR, sources JAR, Javadoc JAR; and the marker POM. Every primary
-has an ASCII-armored OpenPGP signature and SHA-256/SHA-512 sidecars. GitHub also
+has an ASCII-armored OpenPGP signature and bare-hex MD5, SHA-1, SHA-256 and
+SHA-512 sidecars. The ZIP contains exactly 42 files; native ZIP directory entries
+are allowed. See [Central checksum requirements](https://central.sonatype.org/publish/requirements/#provide-file-checksums). GitHub also
 retains a signature and both checksums for the ZIP. There are no separately shipped
 NTBs, consumer-created ZIPs, unshaded/test-fixture JARs, OCI images, npm packages or
 PyPI distributions. GitHub's generated source archives identify source, without
 promising archive byte stability across tag names.
 
-Both registries are required by the maintainer's adoption decision. Existing source
-already used Maven Publish, Plugin Publish and NMCP, but configured only local test
-publication. Central needs the parent POM before Portal consumers can resolve it.
-Central upload uses the standard Publisher API with the retained ZIP; Portal uses
-a small trusted Gradle publishing project with compilation/archive tasks disabled
-and POM/module outputs copied from the retained repository. Neither executes
-selected-source build code with registry credentials.
+Both registries are required by the maintainer's adoption decision. Native Maven
+Publish exports the component payloads without credentials. A separate
+`build-tooling` job builds ATR Maven Bundle from `github.workflow_sha`, independently
+of the selected release source. Its digest-bound local repository is the only
+source for the packaging plugin loaded by the trusted publisher build.
+
+With `-PbuildCentralBundle`, that build consumes the selected payloads unchanged,
+uses the root Gradle signer through ATR Maven Bundle, completes all Maven checksums
+and runs `atrCentralArchive`. Native Plugin Publish signing tasks are disabled in
+this mode so ATR Maven Bundle owns signature creation. Independent verification
+checks primary-byte preservation, all checksums and the full signing fingerprint.
+Release Tooling signs the outer ZIP for GitHub; it does not generate Maven
+sidecars. The Python integration validates and reads ZIPs but does not create them.
+
+Central upload uses the standard Publisher API with the retained ZIP. The small
+Python client submits once, saves the deployment ID, and polls until `PUBLISHED`;
+`FAILED` is terminal and its errors are retained. Status/readback checks retry
+transient failures within explicit budgets. Ambiguous uploads require inspection
+before another upload. NMCP is not used or configured.
+
+Portal promotion uses the same trusted Gradle build without bundle mode. It loads
+no candidate plugin, has no signing credentials, and uploads retained candidate
+files with payload compilation/archive generation disabled and POM/module outputs
+copied from the retained repository. Central must supply the parent POM first.
 
 ## Identity and lifecycle choices
 

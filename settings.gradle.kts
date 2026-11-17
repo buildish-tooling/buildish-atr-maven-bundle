@@ -14,10 +14,6 @@
  * limitations under the License.
  */
 
-import java.time.Duration
-
-val isCI = providers.environmentVariable("CI").isPresent
-
 includeBuild("build-logic") { name = "buildish-atr-maven-bundle-build-logic" }
 
 includeBuild("gradle/license-check-plugin") {
@@ -71,7 +67,6 @@ dependencyResolutionManagement {
 }
 
 plugins {
-  id("com.gradleup.nmcp.settings") version ("1.6.2")
   if (
     providers.environmentVariable("CI").isPresent ||
       providers.systemProperty("allow-java-download").map(String::toBoolean).getOrElse(false)
@@ -81,25 +76,5 @@ plugins {
     // package manager. The downside of letting Gradle automatically download toolchains is that
     // these will only get downloaded once, but not automatically updated.
     id("org.gradle.toolchains.foojay-resolver-convention") version ("1.0.0")
-  }
-}
-
-// Pass environment variables:
-//    ORG_GRADLE_PROJECT_sonatypeUsername
-//    ORG_GRADLE_PROJECT_sonatypePassword
-// Gradle targets:
-//    publishAggregationToCentralPortal
-//    publishAggregationToCentralPortalSnapshots
-//    (nmcpZipAggregation to just generate the single, aggregated deployment zip)
-// Ref: Maven Central Publisher API:
-//    https://central.sonatype.org/publish/publish-portal-api/#uploading-a-deployment-bundle
-nmcpSettings {
-  centralPortal {
-    providers.environmentVariable("ORG_GRADLE_PROJECT_sonatypeUsername").orNull?.let(username::set)
-    providers.environmentVariable("ORG_GRADLE_PROJECT_sonatypePassword").orNull?.let(password::set)
-    publishingType.set(if (isCI) "AUTOMATIC" else "USER_MANAGED")
-    publishingTimeout.set(Duration.ofMinutes(120))
-    validationTimeout.set(Duration.ofMinutes(120))
-    publicationName.set("buildish-atr-maven-bundle-${baseVersion.get()}")
   }
 }

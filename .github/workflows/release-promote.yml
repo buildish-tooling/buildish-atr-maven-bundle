@@ -196,16 +196,18 @@ jobs:
     - run: |
         set -euo pipefail
         python3 -B buildish-release-tooling/registries.py upload-central "$RUNNER_TEMP/promotion/assets/buildish-atr-maven-bundle-$RELEASE_VERSION-maven.zip" "$RUNNER_TEMP/deployment/result.json"
+        python3 -B buildish-release-tooling/registries.py wait-central "$RUNNER_TEMP/deployment/result.json" --attempts 91 --retry-delay 10 --total-timeout 960
       env:
         BUILDISH_RELEASE_TOOLING_PYTHON: ${{ steps.tooling.outputs.python }}
         RELEASE_VERSION: ${{ inputs.version }}
         CENTRAL_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
         CENTRAL_PASSWORD: ${{ secrets.CENTRAL_PASSWORD }}
     - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: ${{ !cancelled() }}
       with:
         name: central-deployment-${{ github.run_id }}
         path: ${{ runner.temp }}/deployment
-        if-no-files-found: error
+        if-no-files-found: ignore
         retention-days: 90
         overwrite: true
   verify-central:

@@ -69,6 +69,13 @@ The explicit test-only adaptations are:
   disposable workflow explicitly configures `ATR_REHEARSAL_REGISTRY_ROOT` and its
   fixture Python path. Central's real multipart request is decoded and its exact
   ZIP entries stored; reads return those bytes or injected visibility/failure states.
+- A separate trusted bootstrap job builds the packaging plugin without selected
+  source execution. The signing job loads its digest-verified local repository,
+  runs ATR Maven Bundle signing/checksum/ZIP tasks and verifies all retained bytes.
+- Central fixtures stage uploads privately, independently check the required four
+  checksum sidecars and signature presence, and expose public files only after
+  the deployment status reaches `PUBLISHED`. This models asynchronous validation;
+  it does not implement Central's complete POM/keyserver admission service.
 - The trusted Portal publisher executes its ordinary local Maven publication task
   instead of its remote upload task. Its exact POM, module and JAR outputs populate
   the Portal fixture, including a registration marker and Central parent-POM view.
@@ -83,7 +90,7 @@ The shared filesystem and fixture key do not simulate hosted runner isolation.
 
 ## Cases and retained evidence
 
-The driver requires all four candidate jobs and all nine promotion jobs to be
+The driver requires all five candidate jobs and all nine promotion jobs to be
 selected. Essential jobs must actually create successful status records, rather
 than merely receiving an inferred green result from the harness. Registry upload
 jobs may lack a status record only when their conditions intentionally skip them.
@@ -130,3 +137,27 @@ The fresh `0.1.0` candidate-only run passed all four jobs with source/tag versio
 and fixture signing/publication. Its report is
 `build/release-0.1.0-candidate-rehearsal/results.json`; it used the installed 0.1.4
 wheel and did not publish to any live service.
+
+The native packaging revision removes NMCP and Python ZIP/signature production.
+Earlier reports described four-job candidates and the defective 28-file Maven
+contract; they are historical lifecycle evidence, not admission evidence for the
+corrected 42-file native bundle. New runs use five candidate jobs (including the
+independent trusted-tooling bootstrap) and authenticated deployment-status polling.
+
+The driver also forks an empty registry at `failed-central-state/` and injects a
+Central validation error after upload acceptance. It requires `publish-central`
+to fail, its receipt/error artifact to exist, all downstream publication jobs to
+remain unexecuted, and no public fixture files or GitHub asset uploads. This case
+is included in `results.json` and can be audited again with `--resume`.
+
+The corrected native-packaging matrix passed on 2026-11-17. Its retained report is
+`build/native-release-rehearsal/results.json`: all five candidate jobs and nine
+first-publication jobs actually succeeded. Locked and partial recovery skipped
+both uploads, ran both verifiers and final publication, preserved sealed SHA-256
+`ec91c49748aee8e9a4ff147fd5b3e43b49c72c561b7256095f5a2e41a95603ec`,
+and performed zero GitHub asset uploads. Failed verification blocked publication;
+its recovery succeeded without registry uploads. Conflicting files blocked all
+later publication. The separate Central rejection case failed `publish-central`,
+retained the failed receipt, and exposed no staged files publicly. These reports
+record installed wheel version `0.1.4` and its Python 3.14 `site-packages` origin.
+They do not establish live registry admission or hosted Actions skip behavior.

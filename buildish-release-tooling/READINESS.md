@@ -16,175 +16,118 @@ limitations under the License.
 
 # Release readiness — 2026-11-17
 
-Current verdict: **local release rehearsal passed**; live first publication still
-requires the deployment prerequisites below. The base workflows and docs branch
-are deployed. The local `0.1.0` preparation keeps main at `0.1.0-SNAPSHOT` and adds
-release notes plus build-checkout version normalization. This preparation does
-not dispatch a release, publish artifacts or change remote settings. Both Maven
-Central and the Gradle Plugin Portal are required. See
-[contract](RELEASE-CONTRACT.md), [operator steps](RELEASE-PROCESS.md) and
+Central rejected the first `0.1.0` candidate's Maven bundle. The local correction
+uses ATR Maven Bundle for signing, checksums and ZIP creation, removes NMCP, and
+keeps a bounded Python Central client. No replacement candidate, key upload,
+workflow dispatch or remote publication was performed by this correction.
+See [contract](RELEASE-CONTRACT.md), [operator guide](RELEASE-PROCESS.md) and
 [docs maintenance](../tools/versioned-docs/README.md).
 
-## Implemented and assessed
+## Composition and baselines
 
-- [x] Exact published `buildish-release-tooling==0.1.4`; runtime requires Python >=3.11.
-  Local evidence uses Python 3.14 and the wheel under `build/release-tooling-venv/`,
-  not sibling source. Production installs into runner-temp. No PyPI extra needed.
-- [x] Released contracts: tag `v0.1.4`, source
-  `b4542a195705c13c3806ca34fed8e821bedc20c8`.
-  Reviewed workflow/recovery baseline:
-  `80045552b0b75f3770aa09daff6e2120a543042d`.
-- [x] Candidate/promotion workflows: trusted source CI, credential-separated build,
-  retained signed Maven ZIP, exact candidate/digest input, producer-bound handoffs,
-  component-owned registry upload/readback, successful consumer gates, GitHub last.
-- [x] Full fingerprint explicitly selected:
-  `D52A35E355AB82E26B879B629890F738DF4BB337`.
-- [x] Component-owned docs helpers adapted from source-only reference
-  `07fbbefeaf300dd12aa5734e0e4172bc0229a7a9` and Mammoth Cache's scoped inventory
-  preservation. They are not shipped CLI features. Default import is incremental.
-- [x] Existing component metadata reviewed/preserved: slug/artifact
-  `atr-maven-bundle`, stable `vX.Y.Z`, docs root `docs`.
-- [x] Existing aggregate catalog and shared build action reviewed read-only:
-  source-relative publication-required snapshot, independent mandatory branch
-  checkout, explicit publication profile in native and container paths.
-  The implemented scoped snapshot contract supersedes the original prompt's
-  aggregate-only version policy ownership. No sibling files were edited here.
+- [x] Published `buildish-release-tooling==0.1.4`, Python >=3.11; no sibling source
+  checkout or package extra. Production and rehearsal use its installed wheel.
+  Released source: `b4542a195705c13c3806ca34fed8e821bedc20c8`.
+  Reviewed workflow/recovery reference: `80045552b0b75f3770aa09daff6e2120a543042d`.
+- [x] Candidate source resolves once, requires trusted push/main `Required Checks`,
+  and builds without signing/publication credentials. `version.txt` may remain
+  `X.Y.Z-SNAPSHOT`; only the build checkout is set to stable `X.Y.Z`.
+- [x] A separate credential-free `build-tooling` job builds the packaging plugin
+  from `github.workflow_sha`. Its producer-bound digest protects the repository
+  loaded by the trusted signing job; selected-source code cannot produce that tool.
+- [x] The trusted publisher's bundle mode runs ATR Maven Bundle signing, checksum
+  completion and ZIP creation. It preserves all seven primary payloads, produces
+  42 files, and independently checks checksums/signatures/full fingerprint.
+  Release Tooling signs the outer ZIP. Python does not sign or create ZIPs.
+- [x] Signing fingerprint remains `D52A35E355AB82E26B879B629890F738DF4BB337`.
+  The Portal mode loads no candidate plugin, receives no signing secret, and
+  uploads retained candidate files without compiling or generating payload JARs.
+- [x] NMCP is removed. The Central helper submits once, retains the receipt and
+  polls authenticated deployment status until `PUBLISHED`; `FAILED` immediately
+  fails the upload job with validation details. Safe status/readback requests retry
+  transient errors within explicit budgets. Ambiguous uploads require inspection.
+- [x] Both Central and Plugin Portal public readback/consumers must pass before
+  sealing/publishing GitHub. Matching sealed bytes are reused; GitHub is published
+  last with the exact producer manifest digest and no subsequent asset uploads.
+- [x] Component-owned versioned-docs helpers derive from source-only reference
+  `07fbbefeaf300dd12aa5734e0e4172bc0229a7a9`; they are not in the pinned package.
+  Existing scoped component metadata and aggregate binding/action were reviewed;
+  no sibling repository was edited. Development docs remain separate/unreleased.
 
 ## Validation evidence
 
-- [x] Repository `check` passed with Gradle 9.9.1 / JDK 21 (the wrapper-selected
-  version, cached distribution SHA-256 verified), including Java 17/21 packaged
-  compatibility, functional/unit/build-logic tests, RAT, formatting and new docs
-  tests. Cached Gradle 9.8.2 also passed with and without the docs worktree.
-  Build-version documentation now matches the 9.9.1 wrapper; consumer compatibility
-  remains pinned to Gradle 9.1.0/Java 17 and 9.8.2/Java 21.
-- [x] Python suite: 45 tests plus 23 unittest subtests passed against installed 0.1.4.
-  Includes absent/partial/matching/conflicting registry
-  states, transient polling, changed handoffs, archive inventory and independent
-  shallow-clone fetch of an older final tag while HEAD stays on a newer workflow.
-- [x] Published harness custom backend: actual installed CLI candidate and promotion,
-  matching-file resume, sealed draft, required manifest digest, locked-publication
-  resume without upload, conflicting existing asset rejection. This is isolated
-  lifecycle rehearsal, not execution of the complete workflow YAML or live registries.
-- [x] A disposable stable-version build exported real plugin artifacts. The trusted
-  Portal publisher reproduced all six plugin/marker primary bytes in a disposable
-  Maven repository, with no source compilation or JAR generation. A separate
-  settings-plugin consumer created a bundle from the retained implementation.
-  The real seven-file export was also signed with an isolated fixture key, packed,
-  extracted, cryptographically verified, and consumed as a settings plugin to
-  produce a Central bundle. This does not qualify the real deployment signing key.
-- [x] New workflow/action zizmor scan passed. Workflow-policy tests require essential
-  final results individually and allow explicitly skipped upload dependencies;
-  cancellation/failed verification cannot satisfy the final job's condition.
-- [x] Aggregate `make -C site site-check-local` passed without this docs checkout
-  (using a disposable stage path). Disposable Pipeline fixtures covered local
-  absence, publication-required absence, valid selected released docs, missing
-  promised docs, hidden/withdrawn versions without originals, malformed inventory,
-  conflicting selected publication states, and development-stage exclusion of
-  historical trees, inventory JSON and `.git`. The executable fixture is
-  `tests/site_snapshot_integration.py` (requires the existing sibling Pipeline env).
-  Current Pipeline reports excluded latest designations as unavailable in staged
-  metadata without failing `check`; deliberate `latestStable` policy correction
-  remains required. No automatic `/latest/` route or development fallback is inferred.
-- [x] Runner selection checked: installed `gh act` 0.2.87 lists all four candidate
-  and nine promotion jobs. The published 0.1.4 harness maps `ubuntu-26.04` to
-  `ghcr.io/catthehacker/ubuntu:act-26.04`; that image is already cached locally.
-- [x] Published 0.1.4 harness + `gh act`: all four candidate jobs and all nine
-  promotion jobs selected; actual successful status records required for every
-  essential job. Corrected first publication executed both registry uploads,
-  exact readbacks, real Gradle consumers, manifest sealing and final publication
-  against the immutable GitHub fixture. Locked and matching-partial recovery
-  skipped both registry uploads, ran both verifiers and finalization, preserved
-  sealed bytes and performed **zero GitHub asset uploads**. A Portal verification
-  outage blocked publication; recovery succeeded without registry re-upload.
-  Conflicting Central bytes failed preflight and blocked all downstream publishing.
-  Every recovery case performed zero registry uploads.
-- [x] Rehearsal exposed and fixed an ordering bug: fresh promotion state must first
-  regain component-owned verification records before 0.1.4 can restage a retained
-  sealed manifest. GitHub staging now follows both registry verifiers. The CLI
-  regression reproduces the old failure and proves recovery with rebuilt evidence.
-- [x] Evidence: `build/workflow-rehearsal/results.json`, per-case JSON/logs and
-  actual job-status files; corrected first publication independently repeated at
-  `build/workflow-first-publication-current/results.json`. Package logs establish
-  `0.1.4` from runner-local Python 3.14 `site-packages`, with no sibling source
-  checkout. Sealed SHA-256:
-  `c3ead8b78f1024d6f7deb7c9876009915975c2fa711158deb7b740993971dcef`.
-  See `tests/rehearsal/README.md` for reproducible commands, fixture adaptations
-  and evidence limits. The simulated version `1.2.3` is not a component release.
-- [x] Fresh candidate-only `0.1.0` rehearsal passed all four jobs with installed
-  0.1.4 and `gh act`. The committed/tagged source retained `0.1.0-SNAPSHOT`; only
-  the selected-source build checkout changed to `0.1.0`. Exported coordinates,
-  JAR `Implementation-Version`, consumer execution, signing and candidate
-  finalization passed. Evidence:
-  `build/release-0.1.0-candidate-rehearsal/results.json`. This is isolated candidate
-  evidence; it does not replace or extend the earlier promotion/recovery matrix
-  into a live-service claim.
-- [x] Docs-branch site trigger prepared locally, with source template
-  `tools/versioned-docs/publish-site.yml`; fake-`gh` tests verify the exact aggregate
-  dispatch and missing-token failure. Full-rebuild regression preserves it.
-- [ ] Live GitHub status/skip propagation and cancellation remain unproven by act.
-  Cancellation is covered by static workflow-policy checks. Existing CI's
-  `ubuntu-slim` and Windows paths are outside this Linux release rehearsal;
-  Windows requires its own runner. No Linux substitution establishes Windows support.
-- [ ] Live Central/Portal publication, registry permissions, metadata retention,
-  initial Portal approval, consumer readback and successful final GitHub jobs.
-  Existing Release Tooling self-promotion run 43917189837 proves its Python path only.
-- [ ] Real signing usability check with selected exported key/passphrase remains.
-- [ ] Published docs navigation after first successful release; no successful local
-  or hosted component tags/releases existed at assessment. No historical release
-  inventory or snapshots can honestly be imported yet.
+- [x] Repository `check`: Gradle 9.9.1 / JDK 21, Java 17/21 consumer compatibility,
+  functional/unit/build-logic tests, formatting, RAT and docs helpers passed after
+  NMCP removal. Earlier 9.8.2 runs covered docs worktree presence/absence.
+- [x] Python: 52 tests and 23 subtests passed. Includes bare Maven sidecar format,
+  digest conflicts, signature/fingerprint/payload checks, asynchronous deployment
+  failure, bounded transient retries, changed handoffs, cancellation/skip policy,
+  and an independent shallow fetch preserving a newer trusted HEAD.
+- [x] The real Central client against the independent fixture accepts an upload,
+  then exits nonzero on failed checksum validation, retains error details and never
+  exposes failed staged files as public. This reproduces the live failure class.
+- [x] Native packaging prototype used an encrypted Ed25519 signing subkey, retained
+  real component primary artifacts, and independently verified every signature,
+  checksum and primary byte. Evidence: `build/trusted-packaging-fixture/result.json`.
+- [x] Fresh five-job candidate rehearsal passed using installed 0.1.4 and `gh act`;
+  this includes the separate trusted bootstrap and native signing/bundling.
+  Evidence: `build/native-release-rehearsal/candidate.json`.
+- [x] Refreshed installed-wheel/`gh act` matrix passed all five candidate and nine
+  first-publication jobs, locked/partial recovery, failed-verification recovery,
+  conflicting-file rejection, and accepted-upload/failed-Central-validation.
+  Evidence: `build/native-release-rehearsal/results.json`. Matching locked/partial
+  recovery preserved the sealed manifest with zero GitHub asset uploads; all
+  recoveries performed zero registry uploads. Failed validation retained its error
+  receipt and blocked every downstream job. Earlier reports under
+  `build/workflow-rehearsal/` and `build/release-0.1.0-candidate-rehearsal/` used the
+  defective Maven sidecar contract and establish historical lifecycle behavior only.
+- [x] Changed workflow/action scan passed. Linux release jobs use the published
+  harness's supported `ubuntu-26.04` mapping. These rehearsals do not prove Windows
+  behavior, hosted runner isolation, live cancellation/skip propagation, settings,
+  credentials, registry approval, or complete Central POM/keyserver admission.
+- [x] Prior aggregate/Pipeline fixtures covered local missing snapshots, required
+  publication absence, valid released docs, missing promised originals, malformed
+  inventory, hidden/withdrawn states, and exclusion of historical trees/inventory
+  and `.git` from development scanning. Excluded latest designations currently need
+  deliberate policy correction; no automatic `/latest/` route is inferred.
 
-## Hosted facts verified read-only
+## Observed live state and first-release work
 
-- Public repository `buildish-tooling/buildish-atr-maven-bundle`, default `main`.
-  No hosted releases were present at the latest readiness inspection. The
-  independent `versioned-docs` branch is now published at
-  `9b68f3ddbbc8e6400c5e25665c112116565e0d85`.
-- Active branch ruleset `25871960`: reviewed PR, linear history, deletion/force-push
-  protection, GitHub Actions `Required Checks`. Admin/role bypasses exist.
-- Actions enabled, selected-action policy, SHA pinning required, default workflow
-  token read-only. CI, candidate and promotion workflows are active. The latest
-  inspected main CI run `44131197664` was still running; its release-workflow
-  checks passed. A new green push/main suite is required on the final preparation
-  commit; that older run cannot qualify subsequent changes.
-- `release-candidate` environment exists and restricts deployments to `main`, with
-  no reviewer rule returned. Its secret names are
-  `BUILDISH_RELEASE_GPG_SECRET_SUBKEY`, `BUILDISH_RELEASE_GPG_PASSPHRASE`,
-  `CENTRAL_USERNAME`, `CENTRAL_PASSWORD`, `GRADLE_PUBLISH_KEY` and
-  `GRADLE_PUBLISH_SECRET`; values were not read. No repository secrets/variables
-  or environment variables were returned. Org-secret inspection returned 403; inherited availability is
-  not verified. No permission/authentication changes were attempted.
-- All release mutation/upload jobs now use that existing `release-candidate`
-  environment. Separate upload environments are unnecessary. The repository read
-  did not expose a Release immutability setting; verify it manually.
+- [x] Public repository: `buildish-tooling/buildish-atr-maven-bundle`, default main;
+  ruleset `25871960`, reviewed PR/linear history and GitHub Actions Required Checks.
+  Actions are enabled with SHA pinning, selected-action policy and read-only default
+  token permissions. Candidate and promotion workflows are active.
+- [x] Main-only `release-candidate` contains the two signing and four registry secret
+  names. Values/usability were not inspected; inherited org-secret availability
+  returned 403. Separate Central/Portal upload environments are not needed.
+- [x] Independent `versioned-docs` is published at
+  `9b68f3ddbbc8e6400c5e25665c112116565e0d85`, with inventory and site trigger.
+  Aggregate dispatch token availability still needs operator confirmation.
+- [x] Actual attempt `44139922783`: public candidate `v0.1.0-rc1`; Central reported
+  missing MD5/SHA-1, wrong SHA sidecar format, and unavailable public key. All 14
+  SHA digest values match the primary bytes. The old upload step only checked
+  submission acceptance. The run was cancelled; final publication did not execute.
+- [x] Immutable `v0.1.0` already identifies
+  `0c37378301845806620140102d0b32e009d055d4`. All seven public Central primary URLs
+  returned 404 at diagnosis; account-side deployment state still needs inspection.
+- [ ] Review/commit/deploy these corrections with successful trusted CI. Keep main's
+  `version.txt` at `0.1.0-SNAPSHOT` until the normal post-release development bump.
+- [ ] Publish the existing public certificate (including signing subkey) to a
+  Central-supported keyserver and confirm lookup. Validate the actual exported
+  key/passphrase through approved isolated signing; no normal keyring changes.
+- [ ] Confirm namespace/plugin-ID ownership, accepted terms, initial Portal approval,
+  draft write-token usability and GitHub Release immutability setting.
+- [ ] New bundle/signatures require a new candidate. To retain `0.1.0`, use the
+  exact original source commit above with the corrected trusted main workflow.
+  Preserve RC1 and the final tag. Different source or conflicting published
+  coordinates require a new version; do not retarget/delete immutable state.
+- [ ] Retain/review the new candidate's actual tag and manifest digest, then
+  separately authorize promotion. Require every essential final job to succeed.
+- [ ] After successful publication, manually import exact-tag docs, curate release
+  selection/latest and deploy the aggregate site. Incomplete/retracted attempts
+  remain hidden/withdrawn inventory records if not completed; a tag alone is not
+  proof of a usable release. Keep static development links marked unreleased.
 
-## Required first-release actions
-
-- [x] Base workflows deployed and active; all required signing and registry secret
-  names are present in `release-candidate`, with its main-only deployment policy.
-- [x] Draft `0.1.0` release notes prepared for maintainer review at
-  `release-notes/0.1.0.md`. Main's `version.txt` stays `0.1.0-SNAPSHOT`; the candidate
-  workflow accepts matching snapshot/stable source versions and sets `0.1.0` only
-  in the selected-source build checkout. Tags retain the reviewed source identity.
-- [ ] Commit/deploy the final preparation and obtain successful trusted push CI on
-  its exact source commit.
-- [ ] Confirm Central namespace and Plugin Portal plugin ID/account ownership,
-  accepted terms and initial Portal approval requirements. Secret names are not
-  evidence that the credentials or remote accounts are usable.
-- [ ] Approve and perform the isolated real-key usability check; publish the public key.
-- [ ] Confirm live draft write-token usability and GitHub Release immutability.
-- [x] Independent docs branch published with the component inventory and site trigger.
-  Confirm `BUILDISH_SITE_PUBLISH_TOKEN` (aggregate Actions write) is available to
-  that branch before relying on its aggregate-site dispatch; inherited secret
-  availability was not accessible through this inspection.
-- [ ] Authorize the `0.1.0` candidate dispatch from the reviewed, green source commit;
-  retain its exact tag and manifest digest, review artifacts/notes, then separately
-  authorize promotion. Require every essential final job to succeed.
-- [ ] After successful completion, manually import exact-tag docs, curate release
-  selection/latest and deploy the separately owned aggregate site. Until deployment,
-  keep static development links explicitly marked unreleased. Advance main to the
-  next development snapshot through a separate source change.
-
-Optional later work: automate the post-release docs update with separate write
-permissions, or upstream typed Central/Portal evidence adapters. Neither permits
-weakening present publication gates or rebuilding immutable packages.
+Optional later work: automate post-release docs updates with separate write
+permissions, or upstream typed Central/Portal evidence adapters. Neither is
+required for this corrected composition.

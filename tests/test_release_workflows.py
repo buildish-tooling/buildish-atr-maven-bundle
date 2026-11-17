@@ -22,6 +22,7 @@ import subprocess
 import sys
 import urllib.error
 import zipfile
+from http.client import IncompleteRead
 from pathlib import Path
 from unittest.mock import patch
 
@@ -41,9 +42,21 @@ def repository(tmp_path):
         path = repo / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(name.encode())
-        for suffix in (".asc", ".sha256", ".sha512"):
-            Path(str(path) + suffix).write_bytes((name + suffix).encode())
+        Path(str(path) + ".asc").write_bytes(b"fixture signature")
+        for algorithm in ("md5", "sha1", "sha256", "sha512"):
+            Path(str(path) + "." + algorithm).write_text(
+                hashlib.new(algorithm, path.read_bytes()).hexdigest() + "\n"
+            )
     return repo
+
+
+def archive_fixture(repository, archive):
+    # Deliberately small ZIP fixture, never the production packaging path.
+    with zipfile.ZipFile(archive, "x") as output:
+        for name, path in w.files(repository).items():
+            item = zipfile.ZipInfo(name)
+            item.external_attr = 0o100644 << 16
+            output.writestr(item, path.read_bytes())
 
 
 def response(data):
@@ -163,6 +176,89 @@ def test_central_upload_retains_receipt_without_retrying_uncertain_failure(
         assert request.call_count == 1
 
 
+def test_central_waits_for_publication_and_retains_failed_validation(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("CENTRAL_USERNAME", "fixture-user")
+    monkeypatch.setenv("CENTRAL_PASSWORD", "fixture-token")
+    receipt = tmp_path / "receipt.json"
+    receipt.write_text(
+        json.dumps({"deployment_id": "approved-id", "bundle_sha256": "f" * 64})
+    )
+
+    def status(state, **fields):
+        return response(
+            json.dumps(
+                {"deploymentId": "approved-id", "deploymentState": state, **fields}
+            ).encode()
+        )
+
+    def request(request, timeout):
+        assert request.get_method() == "POST"
+        assert request.full_url.endswith("/status?id=approved-id")
+        assert request.get_header("Authorization").startswith("Bearer ")
+        assert 0 < timeout <= 30
+        return status("PUBLISHED")
+
+    with patch.object(r.urllib.request, "urlopen", side_effect=request):
+        r.wait_central(receipt, attempts=1)
+    assert json.loads(receipt.read_text())["deployment_state"] == "PUBLISHED"
+    with patch.object(
+        r.urllib.request,
+        "urlopen",
+        side_effect=[status("VALIDATING"), status("PUBLISHING"), status("PUBLISHED")],
+    ) as fetch:
+        r.wait_central(receipt, attempts=3, retry_delay=0)
+        assert fetch.call_count == 3
+    with (
+        patch.object(
+            r.urllib.request,
+            "urlopen",
+            return_value=status(
+                "FAILED", errors={"plugin.jar": ["Missing md5 checksum"]}
+            ),
+        ),
+        pytest.raises(ValueError, match="Missing md5 checksum"),
+    ):
+        r.wait_central(receipt, attempts=3, retry_delay=0)
+    failed = json.loads(receipt.read_text())
+    assert failed["deployment_state"] == "FAILED"
+    assert failed["errors"] == {"plugin.jar": ["Missing md5 checksum"]}
+    with (
+        patch.object(r.urllib.request, "urlopen", return_value=status("VALIDATED")),
+        pytest.raises(ValueError, match="not published within"),
+    ):
+        r.wait_central(receipt, attempts=1)
+    for transient in (
+        urllib.error.HTTPError("fixture", 503, "busy", {}, None),
+        urllib.error.URLError("temporary lookup failure"),
+        ConnectionResetError("temporary reset"),
+        TimeoutError("temporary timeout"),
+        IncompleteRead(b"{", 10),
+        json.JSONDecodeError("truncated reply", "{", 1),
+    ):
+        with patch.object(
+            r.urllib.request, "urlopen", side_effect=[transient, status("PUBLISHED")]
+        ):
+            r.wait_central(receipt, attempts=2, retry_delay=0)
+    with (
+        patch.object(
+            r.urllib.request,
+            "urlopen",
+            return_value=status("PUBLISHED", deploymentId="conflicting-id"),
+        ),
+        pytest.raises(ValueError, match="different deployment"),
+    ):
+        r.wait_central(receipt, attempts=3, retry_delay=0)
+    assert json.loads(receipt.read_text())["errors"] == {}
+    forbidden = urllib.error.HTTPError("fixture", 403, "fixture-token", {}, None)
+    with patch.object(r.urllib.request, "urlopen", side_effect=forbidden) as fetch:
+        with pytest.raises(ValueError, match="HTTP 403") as error:
+            r.wait_central(receipt, attempts=3, retry_delay=0)
+        assert fetch.call_count == 1
+        assert "fixture-token" not in str(error.value)
+
+
 def test_transport_rejects_changed_missing_extra_files(tmp_path, monkeypatch):
     monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "output"))
     bundle = tmp_path / "bundle"
@@ -192,12 +288,34 @@ def test_maven_archive_exact_inventory_and_recovery(repository, tmp_path):
             hashlib.sha512(path.read_bytes()).hexdigest()
         )
     archive = tmp_path / w.archive_name("1.2.3")
-    w.pack(repository, archive, "1.2.3")
+    archive_fixture(repository, archive)
     w.unpack(archive, tmp_path / "unpacked", "1.2.3")
     with zipfile.ZipFile(archive, "a") as contents:
         contents.writestr("docs/releases/1.0.0/private", "extra")
     with pytest.raises(ValueError, match="inventory"):
         w.unpack(archive, tmp_path / "rejected", "1.2.3")
+
+
+@pytest.mark.parametrize("algorithm", ["md5", "sha1", "sha256", "sha512"])
+def test_maven_sidecars_reject_sum_tool_format(repository, tmp_path, algorithm):
+    archive = tmp_path / "good.zip"
+    archive_fixture(repository, archive)
+    name = min(w.primary_paths("1.2.3")) + "." + algorithm
+    sidecar = repository / name
+    bad = sidecar.read_text().strip() + "  artifact.jar\n"
+    sidecar.write_text(bad)
+    with pytest.raises(ValueError, match=f"Invalid Maven {algorithm}"):
+        w.validate_maven_checksums(repository, "1.2.3")
+    with (
+        zipfile.ZipFile(archive) as source,
+        zipfile.ZipFile(tmp_path / "bad.zip", "w") as target,
+    ):
+        for item in source.infolist():
+            target.writestr(
+                item, bad.encode() if item.filename == name else source.read(item)
+            )
+    with pytest.raises(ValueError, match=f"Invalid Maven {algorithm}"):
+        w.unpack(tmp_path / "bad.zip", tmp_path / "bad", "1.2.3")
 
 
 def test_pinned_console_launcher_and_required_commands(tmp_path):
@@ -246,6 +364,10 @@ def test_release_job_permissions_source_and_status_policy():
         (ROOT / "buildish-release-tooling/release-config.yaml").read_text()
     )
     assert config["source"]["require_default_branch_ancestor"] is True
+    assert (
+        config["artifacts"]["signing"]["expected_fingerprint"]
+        == "D52A35E355AB82E26B879B629890F738DF4BB337"
+    )
     assert config["source"]["checks"] == {
         "platform": "github",
         "trusted_workflow_path": ".github/workflows/ci.yml",
@@ -274,6 +396,24 @@ def test_release_job_permissions_source_and_status_policy():
             if job.get("permissions", {}).get("contents") == "write":
                 assert job["environment"] == "release-candidate"
     assert "secrets" not in json.dumps(candidate["jobs"]["build"])
+    assert "secrets" not in json.dumps(candidate["jobs"]["build-tooling"])
+    assert set(candidate["jobs"]["sign"]["needs"]) == {"build", "build-tooling"}
+    tooling = candidate["jobs"]["build-tooling"]
+    assert all(
+        step.get("with", {}).get("path") != "source" for step in tooling["steps"]
+    )
+    signing = "\n".join(
+        step.get("run", "") for step in candidate["jobs"]["sign"]["steps"]
+    )
+    assert signing.index(
+        'verify "$RUNNER_TEMP/tooling" "$TOOLING_DIGEST"'
+    ) < signing.index("./gradlew")
+    assert "-PbuildCentralBundle :atrCentralArchive" in signing
+    assert "workflow.py sign " not in signing and "workflow.py pack " not in signing
+    assert (
+        candidate["jobs"]["sign"]["steps"][-2]["env"]["TOOLING_DIGEST"]
+        == "${{ needs.build-tooling.outputs.bundle_digest }}"
+    )
     resolve_script = "\n".join(
         step.get("run", "") for step in candidate["jobs"]["resolve"]["steps"]
     )
@@ -289,6 +429,18 @@ def test_release_job_permissions_source_and_status_policy():
         assert "'skipped'" in verify["if"]
         assert "'success'" in verify["if"]
     final = promotion["jobs"]["publish"]
+    central = promotion["jobs"]["publish-central"]
+    central_commands = "\n".join(step.get("run", "") for step in central["steps"])
+    assert central_commands.index(
+        "registries.py upload-central"
+    ) < central_commands.index("registries.py wait-central")
+    receipt_upload = next(
+        step
+        for step in central["steps"]
+        if step.get("with", {}).get("name", "").startswith("central-deployment-")
+    )
+    assert "!cancelled()" in receipt_upload["if"]
+    assert receipt_upload["with"]["if-no-files-found"] == "ignore"
     for name in ("resolve", "stage", "verify-central", "verify-portal"):
         assert f"needs.{name}.result == 'success'" in final["if"]
     commands = "\n".join(step.get("run", "") for step in final["steps"])
@@ -486,11 +638,9 @@ def test_final_job_conditions_reject_cancelled_failed_and_skipped_verifiers():
         assert not allowed(verifier, statuses, cancelled=True)
 
 
-def test_sign_and_consume_maven_zip_with_isolated_fixture_key(
+def test_bundle_verification_checks_signatures_fingerprint_and_retained_bytes(
     repository, tmp_path, monkeypatch
 ):
-    import shutil
-
     keyring = tmp_path / "keyring"
     keyring.mkdir(mode=0o700)
     gpg = [
@@ -527,44 +677,31 @@ def test_sign_and_consume_maven_zip_with_isolated_fixture_key(
         secret = subprocess.check_output(
             [*gpg, "--armor", "--export-secret-keys"], text=True
         )
-        config = yaml.safe_load(
-            (ROOT / "buildish-release-tooling/release-config.yaml").read_text()
-        )
-        config["artifacts"]["signing"]["expected_fingerprint"] = fingerprint
-        tooling = tmp_path / "fixture-tooling"
-        tooling.mkdir()
-        for name in ("run.py", "release-tooling.sh"):
-            shutil.copyfile(ROOT / "buildish-release-tooling" / name, tooling / name)
-        (tooling / "release-config.yaml").write_text(yaml.safe_dump(config))
-        monkeypatch.setattr(w, "ROOT", tooling)
-        monkeypatch.setenv("BUILDISH_RELEASE_TOOLING_PYTHON", sys.executable)
         monkeypatch.setenv("BUILDISH_GPG_PRIVATE_KEY", secret)
-        monkeypatch.setenv("BUILDISH_GPG_PASSPHRASE", "")
-        monkeypatch.setenv("MANIFEST_PATH", str(tmp_path / "signing-result.json"))
-        monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(tmp_path / "summary.md"))
-        # Strip test readback sidecars to obtain the exact unsigned input set.
-        for path in repository.rglob("*"):
-            if path.is_file() and path.relative_to(
-                repository
-            ).as_posix() not in w.primary_paths("1.2.3"):
-                path.unlink()
-        signed = tmp_path / "signed"
-        w.sign_repository(repository, signed, "1.2.3")
-        archive = tmp_path / w.archive_name("1.2.3")
-        w.pack(signed, archive, "1.2.3")
-        extracted = tmp_path / "extracted"
-        w.unpack(archive, extracted, "1.2.3")
         for name in w.primary_paths("1.2.3"):
+            path = repository / name
             subprocess.run(
                 [
                     *gpg,
-                    "--verify",
-                    str(extracted / (name + ".asc")),
-                    str(extracted / name),
+                    "--yes",
+                    "--armor",
+                    "--detach-sign",
+                    "--output",
+                    str(path) + ".asc",
+                    str(path),
                 ],
                 check=True,
                 capture_output=True,
             )
+        archive = tmp_path / w.archive_name("1.2.3")
+        archive_fixture(repository, archive)
+        w.verify_bundle(repository, archive, "1.2.3", fingerprint)
+        with pytest.raises(ValueError, match="fingerprint"):
+            w.verify_bundle(repository, archive, "1.2.3", "0" * 40)
+        retained = repository / min(w.primary_paths("1.2.3"))
+        retained.write_bytes(b"different reviewed content")
+        with pytest.raises(ValueError, match="changed retained"):
+            w.verify_bundle(repository, archive, "1.2.3", fingerprint)
     finally:
         subprocess.run(
             ["gpgconf", "--homedir", str(keyring), "--kill", "all"],

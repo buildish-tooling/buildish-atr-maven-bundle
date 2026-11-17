@@ -19,8 +19,10 @@ limitations under the License.
 Read [the contract](RELEASE-CONTRACT.md) and [readiness](READINESS.md) first.
 These are component-owned GitHub Actions workflows around an installed CLI,
 ordinary Gradle builds, a Central Publisher API upload and Maven readback. No
-sibling checkout is required in production. The small Portal publisher runs
-trusted code and uploads retained candidate files instead of rebuilding them.
+sibling checkout is required in production. The separate publisher build uses a trusted bootstrap of ATR Maven Bundle for
+candidate signing/checksums/ZIP creation, then uploads retained files to the Plugin
+Portal during promotion. Python handles Central upload/status/readback. NMCP is
+removed.
 
 The commands below mutate remote state where indicated. Run them only after the
 applicable approval. Nothing in this guide grants dispatch, credential changes,
@@ -41,8 +43,14 @@ commits, pushes or publication approval by itself.
    Through an approved isolated check, export the actual selected key, verify full
    fingerprint `D52A35E355AB82E26B879B629890F738DF4BB337`, and sign/verify with the
    matching passphrase. Print no secrets and do not import into a normal keyring.
-   Secret names alone are insufficient evidence. Publish the public key through
-   the project's chosen trust channel before asking consumers to verify signatures.
+   Secret names alone are insufficient evidence. Publish the public certificate,
+   including its signing subkey, to a Central-supported keyserver. On the machine
+   holding that certificate, the separately authorized command is:
+   `gpg --keyserver hkps://keyserver.ubuntu.com --send-keys D52A35E355AB82E26B879B629890F738DF4BB337`.
+   This publishes public key material to the keyserver; the secret key stays local.
+   See [Central's key distribution instructions](https://central.sonatype.org/publish/requirements/gpg/#distributing-your-public-key).
+   The isolated CLI probe below qualifies the key for outer ZIP signing; the
+   candidate job also exercises Gradle signing and verifies every Maven signature.
 4. In the same `release-candidate` environment, set `CENTRAL_USERNAME` and
    `CENTRAL_PASSWORD` to a Central Portal user token pair. Verify
    ownership of namespaces for both implementation/parent and plugin-marker groups,
@@ -130,6 +138,29 @@ Set `BUILDISH_RELEASE_TOOLING_PYTHON` to the approved installed interpreter befo
 running the launcher. A failure requires inspection of the exported key, fingerprint
 or passphrase; do not weaken the fingerprint gate. Preserve only nonsecret results.
 
+## Trusted Maven bundle build
+
+Candidate creation has five jobs: resolve; build the selected payload without
+credentials; independently build the packaging plugin from the trusted workflow
+revision; sign/package; publish the reviewed candidate assets. The separate
+`buildish-release-tooling/portal-publisher` build serves both packaging and Portal
+promotion, with explicit modes:
+
+- Bundle mode takes `RELEASE_REPOSITORY` containing the seven unsigned primary
+  files and `RELEASE_TOOLING_REPOSITORY` pointing to the digest-verified trusted
+  bootstrap repository. `RELEASE_VERSION` selects the final Maven version.
+- The trusted signing step supplies `BUILDISH_GPG_PRIVATE_KEY`,
+  `BUILDISH_GPG_PASSPHRASE` and the full configured `BUILDISH_GPG_FINGERPRINT`.
+  `-PbuildCentralBundle :atrCentralArchive` enables ATR Maven Bundle signing and
+  checksum completion. No selected payload is compiled or regenerated there.
+- The native ZIP is under
+  `build/atr-maven-bundle/central/buildish-atr-maven-bundle-X.Y.Z.zip` relative to
+  the publisher directory. Independent checks verify its exact file inventory,
+  bare Maven checksums, primary-byte preservation and every signing fingerprint.
+  Release Tooling then signs the outer GitHub ZIP asset.
+- Portal promotion omits `-PbuildCentralBundle`, loads no candidate plugin and
+  receives no signing credentials. `publishPlugins` uploads the retained files.
+
 ## Prepare each version and review a candidate
 
 Choose an unused stable dispatch version `X.Y.Z`. Committed `version.txt` may
@@ -197,10 +228,15 @@ gh workflow run release-promote.yml --repo buildish-tooling/buildish-atr-maven-b
 ```
 
 Promotion verifies and downloads candidate artifacts and creates the final tag on
-that source. Immediate preflight rejects conflicting registry bytes. An absent target uploads; complete matches skip upload; matching
-partial state skips re-upload and waits for readback. Central must verify before
-Portal starts. Post-upload readback uses 91 attempts, 10-second delays and a
-960-second overall budget per registry. It checks Central primaries and signed
+that source. Immediate preflight rejects conflicting registry bytes. An absent
+target uploads; complete matches skip upload; matching
+partial state skips re-upload and waits for readback. The Central upload job saves
+the deployment receipt and polls its authenticated status endpoint until `PUBLISHED`, with 91 attempts, 10-second delays and a
+960-second deadline. `FAILED` immediately fails that job and reports validation
+errors. The receipt artifact is retained even when validation fails. Public
+readback remains a separate check; upload acceptance is not publication success.
+Central must verify before Portal starts. Post-upload readback uses 91 attempts,
+10-second delays and a 960-second overall budget per registry. It checks Central primaries and signed
 sidecars, Portal primary bytes and version registration, then runs fresh consumers.
 
 Both deterministic readback records are embedded as generic verification claims
@@ -209,7 +245,8 @@ manifest, rather than additional late asset uploads. The final job fetches the e
 final tag from checked state without checking it out and stages the GitHub draft
 with both readback records already in release state. This ordering lets 0.1.4
 validate component-owned verification records when reusing a retained sealed
-manifest. It preserves matching sealed bytes, attaches `release-manifest-v1.json` to the draft, publishes with
+manifest. It preserves matching sealed bytes, attaches `release-manifest-v1.json`
+to the draft, publishes with
 `--require-manifest-digest`, and verifies without further uploads.
 
 Require `resolve`, `stage`, `verify-central`, `verify-portal`, and `publish` each to
@@ -234,7 +271,49 @@ packages and cannot turn a failed package release into success.
 | Workflow fix required | Fresh dispatch on the new workflow revision, retaining approved candidate tag/digest when payload and contract are unchanged. Retrying old jobs uses the old workflow. |
 | Cancellation or failed verification | Publication remains blocked. Inspect partial remote state before resuming the same identity. |
 
+For upload recovery, prefer a fresh promotion dispatch with the same exact
+candidate tag/digest so the public preflights run again. Retrying only a failed
+upload job retains its earlier upstream inspection result; inspect an uncertain
+Central deployment before doing so. Read-only status polling can resume from the
+retained deployment receipt without submitting another upload.
+
 Workflow artifacts retain transport/verification state for 90 days. Preserve needed
 inputs before expiry. A fresh promotion can reacquire the immutable candidate;
 it must not infer approval from whichever candidate is newest. No automatic deletion,
 yank, candidate replacement, force-tagging, or registry rollback is performed.
+
+## Recover the failed 0.1.0 Central validation attempt
+
+Run `44139922783` submitted the original `v0.1.0-rc1` ZIP. It lacked MD5/SHA-1
+sidecars and its SHA-256/SHA-512 sidecars used sum-tool text instead of Maven's
+bare-hex format. All 14 SHA digest values matched their primary files; this was a
+packaging defect, not evidence of changed primary bytes. Central also could not
+find the public signing key. The old upload step returned after submission, which
+explains its green result. The run was subsequently cancelled; final GitHub
+publication did not execute.
+
+1. Deploy the corrected workflow on main through the normal approval process and
+   publish the existing public certificate to a supported keyserver. Confirm the
+   failed Central deployment did not publish anything. Public readback of all
+   seven primary coordinates returned 404 at diagnosis; account-side deployment
+   state still needs the operator's check.
+2. Preserve `v0.1.0-rc1`, its manifest/assets, the failed Central deployment and the
+   already-created final tag. `v0.1.0` points to
+   `0c37378301845806620140102d0b32e009d055d4` and must not move.
+3. Packaging and signatures change, so create/review a new candidate rather than
+   retry promotion of RC1. To retain version `0.1.0`, select that **same source
+   commit explicitly**, with the corrected trusted workflow on main. Release
+   Tooling 0.1.4 can allocate the next RC while retaining the existing final tag.
+   The new trusted packaging plugin is built independently of that older source.
+   Historical source still contains its old build configuration (including NMCP),
+   but it is not used for publication. Removing that history from the tagged
+   source would require a new source/version, not moving the existing tag.
+4. Retain the new candidate's actual tag and manifest digest and separately approve
+   promotion. A fresh dispatch selects the corrected workflow revision; rerunning
+   the old jobs does not. The final tag will match the candidate's original source.
+
+If any conflicting coordinate was published, use a new version. If different
+component source is required, the existing immutable `v0.1.0` also requires a new
+version. Increasing RC alone cannot replace published files or retarget that tag.
+Nothing in these instructions authorizes dispatch, key publication, deletion or
+remote mutation automatically.

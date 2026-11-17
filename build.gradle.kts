@@ -18,12 +18,12 @@ import org.jetbrains.gradle.ext.copyright
 import org.jetbrains.gradle.ext.encodings
 import org.jetbrains.gradle.ext.settings
 
-// Release publishing is deliberately split from this source build. This build creates
-// candidate artifacts without publication credentials. Plugin Portal promotion uses
-// buildish-release-tooling/portal-publisher/build.gradle from the trusted workflow
-// revision to upload the retained candidate bytes, with compilation and archive
-// generation disabled. Keep shared plugin identity and metadata consistent between
-// gradle-plugin/build.gradle.kts and that publisher.
+// Release operations are deliberately split from this source build. Candidate
+// packaging in buildish-release-tooling/portal-publisher/build.gradle uses a plugin
+// built from the trusted workflow revision for signing, checksums and ZIP creation.
+// The same separate build uploads retained candidate files to the Plugin Portal.
+// Payload compilation/JAR generation only happen here, without credentials. Keep
+// shared plugin identity consistent with gradle-plugin/build.gradle.kts.
 
 buildscript { repositories { maven { url = java.net.URI("https://plugins.gradle.org/m2/") } } }
 

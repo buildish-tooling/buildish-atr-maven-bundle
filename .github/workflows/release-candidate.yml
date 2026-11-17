@@ -137,11 +137,56 @@ jobs:
         if-no-files-found: error
         retention-days: 90
         overwrite: true
+  build-tooling:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    needs:
+    - resolve
+    outputs:
+      bundle_digest: ${{ steps.tooling-build.outputs.bundle_digest }}
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.workflow_sha }}
+        persist-credentials: false
+        fetch-depth: 1
+    - uses: $/.github/actions/setup-release-tooling
+      id: tooling
+    - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880
+      with:
+        distribution: temurin
+        java-version: |-
+          17
+          21
+        overwrite-settings: false
+    - run: |
+        set -euo pipefail
+        # Bootstrap packaging code only from this job's trusted workflow checkout.
+        printf '%s\n' "$RELEASE_VERSION" > version.txt
+        ./gradlew --no-daemon --console=plain \
+          -Dorg.gradle.java.installations.fromEnv=JAVA_HOME_17_X64,JAVA_HOME_21_X64 \
+          -Dorg.gradle.java.installations.auto-download=false \
+          :publishMavenJavaPublicationToReleaseBundleRepository \
+          :gradle-plugin:publishPluginMavenPublicationToReleaseBundleRepository \
+          :gradle-plugin:publishAtrMavenBundlePluginMarkerMavenPublicationToReleaseBundleRepository
+        python3 -B buildish-release-tooling/workflow.py export build/release-repository "$RUNNER_TEMP/tooling/repository" "$RELEASE_VERSION"
+        python3 -B buildish-release-tooling/workflow.py seal "$RUNNER_TEMP/tooling"
+      env:
+        RELEASE_VERSION: ${{ inputs.version }}
+      id: tooling-build
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: candidate-tooling-${{ github.run_id }}
+        path: ${{ runner.temp }}/tooling
+        if-no-files-found: error
+        retention-days: 90
+        overwrite: true
   sign:
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     needs:
     - build
+    - build-tooling
     environment: release-candidate
     outputs:
       bundle_digest: ${{ steps.sign.outputs.bundle_digest }}
@@ -153,16 +198,34 @@ jobs:
         fetch-depth: 1
     - uses: $/.github/actions/setup-release-tooling
       id: tooling
+    - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880
+      with:
+        distribution: temurin
+        java-version: |-
+          17
+          21
+        overwrite-settings: false
     - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
       with:
         name: candidate-unsigned-${{ github.run_id }}
         path: ${{ runner.temp }}/unsigned
+    - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        name: candidate-tooling-${{ github.run_id }}
+        path: ${{ runner.temp }}/tooling
     - run: |
         set -euo pipefail
         python3 -B buildish-release-tooling/workflow.py verify "$RUNNER_TEMP/unsigned" "$EXPECTED_DIGEST"
-        python3 -B buildish-release-tooling/workflow.py sign "$RUNNER_TEMP/unsigned/repository" "$RUNNER_TEMP/signed-repository" "$RELEASE_VERSION"
-        python3 -B buildish-release-tooling/workflow.py pack "$RUNNER_TEMP/signed-repository" "$RUNNER_TEMP/maven.zip" "$RELEASE_VERSION"
-        mv "$RUNNER_TEMP/maven.zip" "$RUNNER_TEMP/buildish-atr-maven-bundle-$RELEASE_VERSION-maven.zip"
+        python3 -B buildish-release-tooling/workflow.py verify "$RUNNER_TEMP/tooling" "$TOOLING_DIGEST"
+        export BUILDISH_GPG_FINGERPRINT="$("$BUILDISH_RELEASE_TOOLING_PYTHON" -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["artifacts"]["signing"].get("expected_fingerprint", ""))' buildish-release-tooling/release-config.yaml)"
+        export RELEASE_TOOLING_REPOSITORY="file://$RUNNER_TEMP/tooling/repository"
+        export RELEASE_REPOSITORY="$RUNNER_TEMP/unsigned/repository"
+        ./gradlew --no-daemon --no-configuration-cache --console=plain \
+          -p buildish-release-tooling/portal-publisher -PbuildCentralBundle :atrCentralArchive
+        archive="buildish-release-tooling/portal-publisher/build/atr-maven-bundle/central/buildish-atr-maven-bundle-$RELEASE_VERSION.zip"
+        python3 -B buildish-release-tooling/workflow.py verify-bundle "$RELEASE_REPOSITORY" "$archive" "$RELEASE_VERSION" "$BUILDISH_GPG_FINGERPRINT"
+        cp "$archive" "$RUNNER_TEMP/buildish-atr-maven-bundle-$RELEASE_VERSION-maven.zip"
+        # Release Tooling signs the outer GitHub asset; ATR Maven Bundle signed its contents.
         bash buildish-release-tooling/release-tooling.sh prepare-release-assets --output-dir "$RUNNER_TEMP/signed/assets" \
           "$RUNNER_TEMP/buildish-atr-maven-bundle-$RELEASE_VERSION-maven.zip"
         python3 -B buildish-release-tooling/workflow.py seal "$RUNNER_TEMP/signed"
@@ -172,6 +235,7 @@ jobs:
         RELEASE_VERSION: ${{ inputs.version }}
         BUILDISH_GPG_PRIVATE_KEY: ${{ secrets.BUILDISH_RELEASE_GPG_SECRET_SUBKEY }}
         BUILDISH_GPG_PASSPHRASE: ${{ secrets.BUILDISH_RELEASE_GPG_PASSPHRASE }}
+        TOOLING_DIGEST: ${{ needs.build-tooling.outputs.bundle_digest }}
       id: sign
     - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:

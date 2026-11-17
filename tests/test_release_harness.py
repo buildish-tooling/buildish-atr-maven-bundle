@@ -89,6 +89,15 @@ call publish-github-final-release --release-state promotion.json --require-manif
 call verify-github-final-release --release-state promotion.json
 printf 'conflicting bytes\n' > maven.zip
 if call stage-github-final-release --release-state promotion.json --asset maven.zip; then exit 42; fi
+# A packaging-only correction can select a new candidate on the unchanged source
+# after a final tag exists; a fresh trusted workflow revision may run the command.
+approved_source="$(git rev-parse HEAD)"
+printf 'trusted workflow correction\n' > workflow-fix.txt
+git add workflow-fix.txt
+git -c core.hooksPath=/dev/null -c commit.gpgsign=false commit -m 'Trusted workflow fix'
+MANIFEST_PATH="$PWD/rc2.json" call resolve-candidate 1.2.3 "$approved_source"
+python3 -c 'import json; p=json.load(open("rc2.json")); assert p["candidate"]["tag"]["name"] == "v1.2.3-rc2"; assert p["source"]["commit_sha"] == p["final_tag_identity"]["target_commit"]'
+test "$(git rev-parse 'v1.2.3^{commit}')" = "$approved_source"
 """.replace("CLI_COMMAND", run)
     scenario = {
         "name": "atr-candidate-promotion-recovery",
