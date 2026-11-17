@@ -13,9 +13,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-.nvmrc
-CODE_OF_CONDUCT.md
-.idea/.name
-.idea/copyright/ApacheLicense_v2.xml
-.idea/copyright/profiles_settings.xml
-gradle/wrapper/gradle-wrapper-*.asc
+/.nvmrc
+/CODE_OF_CONDUCT.md
+/.idea/.name
+/.idea/copyright/ApacheLicense_v2.xml
+/.idea/copyright/profiles_settings.xml
+/gradle/wrapper/gradle-wrapper.properties
+/gradle/wrapper/gradle-wrapper-*.asc
+/gradle-plugin/stutter.lockfile
+/version.txt

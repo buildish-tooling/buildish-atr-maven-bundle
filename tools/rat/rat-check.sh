@@ -79,7 +79,7 @@ work_dir=$(mktemp -d "$BUILD_DIR/work.XXXXXX")
 trap 'rm -rf "$work_dir"' EXIT HUP INT TERM
 tar -xzf "$ARCHIVE_PATH" -C "$work_dir"
 rat_jar="$work_dir/apache-rat-${RAT_VERSION}/apache-rat-${RAT_VERSION}.jar"
-exclude_file="$TOOL_DIR/tools/rat/.rat-excludes"
+exclude_file="$REPO_ROOT/.rat-excludes"
 
 java -jar "$rat_jar" \
   --input-exclude-std GIT GRADLE IDEA ECLIPSE HIDDEN_DIR \
