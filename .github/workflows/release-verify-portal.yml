@@ -22,7 +22,7 @@ name: Verify Approved Plugin Portal Release
         required: true
         type: string
       final_manifest_digest:
-        description: Retained SHA-256 of the sealed release-manifest-v1.json
+        description: SHA-256 of FINAL release-manifest-v1.json from the successful promotion's publish summary
         required: true
         type: string
 permissions:

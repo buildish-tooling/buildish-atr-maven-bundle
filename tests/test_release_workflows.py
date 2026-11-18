@@ -989,3 +989,119 @@ def test_follow_up_has_no_publication_permissions_or_tasks():
         "upload-central",
     ):
         assert forbidden not in scripts
+
+
+@pytest.fixture
+def portal_marker_repository(repository):
+    version = "1.2.3"
+    marker = f"{w.PLUGIN.replace('.', '/')}/{w.PLUGIN}.gradle.plugin/{version}/{w.PLUGIN}.gradle.plugin-{version}.pom"
+    mapping = f"""<project xmlns="http://maven.apache.org/POM/4.0.0">
+      <modelVersion>4.0.0</modelVersion><groupId>{w.PLUGIN}</groupId>
+      <artifactId>{w.PLUGIN}.gradle.plugin</artifactId><version>{version}</version><packaging>pom</packaging>
+      <dependencies><dependency><groupId>org.buildish.atr-maven-bundle</groupId>
+      <artifactId>gradle-plugin</artifactId><version>{version}</version></dependency></dependencies>
+    </project>"""
+    retained = mapping.replace(
+        "<dependencies>",
+        f"""<name>gradle-plugin</name><description>Bundle plugin</description>
+      <parent><groupId>org.buildish.atr-maven-bundle</groupId><artifactId>buildish-atr-maven-bundle</artifactId><version>{version}</version></parent>
+      <dependencies>""",
+    )
+    (repository / marker).write_text(retained)
+    parent = (
+        repository
+        / f"org/buildish/atr-maven-bundle/buildish-atr-maven-bundle/{version}/buildish-atr-maven-bundle-{version}.pom"
+    )
+    parent.write_text(f"""<project xmlns="http://maven.apache.org/POM/4.0.0"><modelVersion>4.0.0</modelVersion>
+      <groupId>org.buildish.atr-maven-bundle</groupId><artifactId>buildish-atr-maven-bundle</artifactId>
+      <version>{version}</version><packaging>pom</packaging><name>Bundle</name></project>""")
+    return repository, marker, mapping.encode(), parent
+
+
+def test_portal_regenerated_marker_records_observed_and_retained_hashes(
+    portal_marker_repository, tmp_path
+):
+    repository, marker, observed, _ = portal_marker_repository
+    original = fetcher(repository)
+
+    def fetch(url, timeout):
+        if url.endswith(marker):
+            return response(observed)
+        return original(url, timeout)
+
+    result = tmp_path / "readback.json"
+    with patch.object(r.urllib.request, "urlopen", side_effect=fetch):
+        r.verify(repository, "1.2.3", "portal", result, attempts=1)
+    facts = w.read(result)["files"]
+    assert len(facts) == 6
+    assert facts[marker] == {
+        "sha256": hashlib.sha256(observed).hexdigest(),
+        "size": len(observed),
+        "verification": "plugin-marker-mapping-v1",
+        "retained_sha256": w.digest(repository / marker),
+        "retained_size": (repository / marker).stat().st_size,
+    }
+    for name, record in facts.items():
+        if name != marker:
+            assert record == {
+                "sha256": w.digest(repository / name),
+                "size": (repository / name).stat().st_size,
+            }
+    # The exception applies only to Portal markers, never to Central files.
+    with pytest.raises(ValueError, match="Conflicting central"):
+        r.inspect(repository, "1.2.3", "central", fetch)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        lambda x: x.replace(
+            b"<groupId>org.buildish.atr-maven-bundle.gradle-plugin</groupId>",
+            b"<groupId>another.plugin</groupId>",
+        ),
+        lambda x: x.replace(
+            b"<artifactId>gradle-plugin</artifactId>",
+            b"<artifactId>another-implementation</artifactId>",
+        ),
+        lambda x: x.replace(b"<version>1.2.3</version>", b"<version>1.2.4</version>"),
+        lambda x: x.replace(
+            b"</dependency>", b"<classifier>other</classifier></dependency>"
+        ),
+        lambda x: x.replace(b"</dependency>", b"<scope>provided</scope></dependency>"),
+        lambda x: x.replace(b"</dependencies>", b"<dependency/></dependencies>"),
+        lambda x: x.replace(b"</project>", b"<profiles/></project>"),
+        lambda x: x.replace(b"</project>", b"<repositories/></project>"),
+        lambda x: x.replace(
+            b"<packaging>pom</packaging>", b"<packaging>jar</packaging>"
+        ),
+        lambda x: x.replace(
+            b"<version>1.2.3</version>",
+            b"<version>1.2.3</version><version>1.2.3</version>",
+            1,
+        ),
+        lambda x: b"not XML",
+    ],
+)
+def test_portal_marker_equivalence_rejects_resolution_changes(
+    portal_marker_repository, change
+):
+    repository, marker, observed, _ = portal_marker_repository
+    with pytest.raises(ValueError, match="Conflicting portal plugin-marker mapping"):
+        r.verify_portal_marker(
+            change(observed), (repository / marker).read_bytes(), repository, "1.2.3"
+        )
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["dependencyManagement", "dependencies", "properties", "profiles", "repositories"],
+)
+def test_portal_marker_cannot_drop_resolution_relevant_parent(
+    portal_marker_repository, field
+):
+    repository, marker, observed, parent = portal_marker_repository
+    parent.write_text(parent.read_text().replace("</project>", f"<{field}/></project>"))
+    with pytest.raises(ValueError, match="Conflicting portal plugin-marker mapping"):
+        r.verify_portal_marker(
+            observed, (repository / marker).read_bytes(), repository, "1.2.3"
+        )

@@ -289,3 +289,20 @@ def test_portal_fixture_requires_real_publisher_outputs(tmp_path, monkeypatch):
     assert b"Plugin Not Found" in error.value.read()
     policy.write_text("{}")
     assert fixture.urlopen(page).read() == b"1.2.3"
+
+
+def test_portal_fixture_generates_minimal_marker_mapping():
+    import xml.etree.ElementTree as ET
+
+    root = ET.fromstring(fixture.portal_marker("1.2.3"))
+    ns = "{http://maven.apache.org/POM/4.0.0}"
+    assert (
+        root.findtext(ns + "groupId") == "org.buildish.atr-maven-bundle.gradle-plugin"
+    )
+    assert root.findtext(ns + "version") == "1.2.3"
+    assert root.find(ns + "parent") is None
+    dependencies = root.findall(f"{ns}dependencies/{ns}dependency")
+    assert len(dependencies) == 1
+    assert dependencies[0].findtext(ns + "groupId") == "org.buildish.atr-maven-bundle"
+    assert dependencies[0].findtext(ns + "artifactId") == "gradle-plugin"
+    assert dependencies[0].findtext(ns + "version") == "1.2.3"

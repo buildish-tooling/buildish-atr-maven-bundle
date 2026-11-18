@@ -28,6 +28,7 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+import xml.etree.ElementTree as ET
 from html import unescape
 from http.client import IncompleteRead
 from pathlib import Path
@@ -62,7 +63,127 @@ def expected_files(repository, version, target):
     return {name: repository / name for name in sorted(names)}
 
 
-def inspect(repository, version, target, fetch=None, deadline=None):
+def verify_portal_marker(observed, retained, repository, version):
+    """Allow only the Portal's metadata-free, single-dependency marker mapping."""
+    namespace = "{http://maven.apache.org/POM/4.0.0}"
+
+    def children(element, allowed):
+        result = {}
+        if (element.text or "").strip() or any(
+            (child.tail or "").strip() for child in element
+        ):
+            raise ValueError("Unexpected marker text")
+        if element.attrib and element.tag != namespace + "project":
+            raise ValueError("Unexpected marker attributes")
+        for child in element:
+            name = child.tag.removeprefix(namespace)
+            if child.tag != namespace + name or name not in allowed or name in result:
+                raise ValueError("Unexpected or duplicate marker element")
+            result[name] = child
+        return result
+
+    def project(data):
+        if b"<!DOCTYPE" in data.upper() or b"<!ENTITY" in data.upper():
+            raise ValueError("Unexpected marker document declaration")
+        root = ET.fromstring(data)
+        if root.tag != namespace + "project" or set(root.attrib) - {
+            "{http://www.w3.org/2001/XMLSchema-instance}schemaLocation"
+        }:
+            raise ValueError("Unexpected marker project")
+        return root
+
+    def scalar(element, expected):
+        if len(element) or element.attrib or (element.text or "").strip() != expected:
+            raise ValueError("Marker coordinates or dependency differ")
+
+    fields = {
+        "modelVersion",
+        "groupId",
+        "artifactId",
+        "version",
+        "packaging",
+        "dependencies",
+    }
+    try:
+        for data, original in ((observed, False), (retained, True)):
+            values = children(
+                project(data),
+                fields | ({"name", "description", "parent"} if original else set()),
+            )
+            if not fields <= values.keys():
+                raise ValueError("Incomplete marker")
+            for name, expected in {
+                "modelVersion": "4.0.0",
+                "groupId": PLUGIN,
+                "artifactId": PLUGIN + ".gradle.plugin",
+                "version": version,
+                "packaging": "pom",
+            }.items():
+                scalar(values[name], expected)
+            dependencies = values["dependencies"]
+            if (
+                dependencies.attrib
+                or len(dependencies) != 1
+                or dependencies[0].tag != namespace + "dependency"
+            ):
+                raise ValueError(
+                    "Expected exactly one marker implementation dependency"
+                )
+            dependency = children(dependencies[0], {"groupId", "artifactId", "version"})
+            for name, expected in {
+                "groupId": "org.buildish.atr-maven-bundle",
+                "artifactId": "gradle-plugin",
+                "version": version,
+            }.items():
+                scalar(dependency[name], expected)
+            if "parent" in values:
+                parent = children(
+                    values["parent"], {"groupId", "artifactId", "version"}
+                )
+                for name, expected in {
+                    "groupId": "org.buildish.atr-maven-bundle",
+                    "artifactId": "buildish-atr-maven-bundle",
+                    "version": version,
+                }.items():
+                    scalar(parent[name], expected)
+                path = (
+                    Path(repository)
+                    / f"org/buildish/atr-maven-bundle/buildish-atr-maven-bundle/{version}/buildish-atr-maven-bundle-{version}.pom"
+                )
+                # Dropping this parent is safe only while it supplies metadata alone.
+                parent_values = children(
+                    project(path.read_bytes()),
+                    {
+                        "modelVersion",
+                        "groupId",
+                        "artifactId",
+                        "version",
+                        "packaging",
+                        "name",
+                        "description",
+                        "url",
+                        "inceptionYear",
+                        "organization",
+                        "licenses",
+                        "developers",
+                        "mailingLists",
+                        "scm",
+                        "issueManagement",
+                    },
+                )
+                for name, expected in {
+                    "modelVersion": "4.0.0",
+                    "groupId": "org.buildish.atr-maven-bundle",
+                    "artifactId": "buildish-atr-maven-bundle",
+                    "version": version,
+                    "packaging": "pom",
+                }.items():
+                    scalar(parent_values[name], expected)
+    except (ET.ParseError, KeyError, ValueError) as error:
+        raise ValueError("Conflicting portal plugin-marker mapping") from error
+
+
+def inspect(repository, version, target, fetch=None, deadline=None, observations=None):
     fetch = fetch or urllib.request.urlopen
 
     def budget():
@@ -131,10 +252,19 @@ def inspect(repository, version, target, fetch=None, deadline=None):
             IncompleteRead,
         ) as error:
             raise ConnectionError(f"Transient {target} read failure") from error
-        if len(observed) != path.stat().st_size or hashlib.sha256(
-            observed
-        ).hexdigest() != digest(path):
-            raise ValueError(f"Conflicting {target} publication: {name}")
+        actual = {"sha256": hashlib.sha256(observed).hexdigest(), "size": len(observed)}
+        if actual != {"sha256": digest(path), "size": path.stat().st_size}:
+            marker = f"{PLUGIN.replace('.', '/')}/{PLUGIN}.gradle.plugin/{version}/{PLUGIN}.gradle.plugin-{version}.pom"
+            if target != "portal" or name != marker:
+                raise ValueError(f"Conflicting {target} publication: {name}")
+            verify_portal_marker(observed, path.read_bytes(), repository, version)
+            actual.update(
+                verification="plugin-marker-mapping-v1",
+                retained_sha256=digest(path),
+                retained_size=path.stat().st_size,
+            )
+        if observations is not None:
+            observations[name] = actual
         found.append(name)
     if portal_absent:
         return "absent"
@@ -149,14 +279,25 @@ def verify(
     deadline = time.monotonic() + total_timeout
     for attempt in range(attempts):
         try:
-            if inspect(repository, version, target, deadline=deadline) == "complete":
+            observed = {}
+            if (
+                inspect(
+                    repository,
+                    version,
+                    target,
+                    deadline=deadline,
+                    observations=observed,
+                )
+                == "complete"
+            ):
                 write(
                     result,
                     {
                         "target": target,
                         "version": version,
                         "base_url": BASES[target],
-                        "files": {
+                        "files": observed
+                        or {
                             name: {"sha256": digest(path), "size": path.stat().st_size}
                             for name, path in expected_files(
                                 repository, version, target

@@ -81,6 +81,9 @@ The explicit test-only adaptations are:
   the Portal fixture, including a registration marker and Central parent-POM view.
   Missing version pages use the observed HTTP 400 “Plugin Not Found” HTML response;
   Maven URLs still use 404 for absent files.
+  It now regenerates the plugin-marker POM, as observed from the approved live
+  `0.1.1` release. Readback checks its exact mapping separately and records both
+  observed and retained hashes; the other five primary files remain byte-exact.
 - A `pending_portal` fixture policy hides the submitted version's public page.
   Promotion records successful submission and pending public verification, then
   finalizes GitHub. The separate follow-up workflow must fail before approval and
@@ -187,3 +190,9 @@ preserved sealed SHA-256
 `446808fb55aeb67b1a74b02273d4578de23b93f84e70e42f5fd63e0dc4114712`.
 The installed package version/origin was checked in every actual job. The maintained
 follow-up audit also rechecked the retained reports without rerunning workflows.
+
+The regenerated-marker follow-up rehearsal passed with installed `0.1.4`, an
+actual consumer and zero registry/Release asset uploads. Its retained report is
+`build/portal-marker-rehearsal/results.json`. The independent live read-only
+`0.1.1` probe and consumer passed as well; these did not dispatch a GitHub workflow.
+Earlier fixtures copied marker bytes and therefore missed the service rewrite.

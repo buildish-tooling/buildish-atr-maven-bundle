@@ -23,15 +23,18 @@ credential changed or remote publication performed by this local correction.
 See [contract](RELEASE-CONTRACT.md), [operator guide](RELEASE-PROCESS.md) and
 [docs maintenance](../tools/versioned-docs/README.md).
 
-Latest live attempt: run `44257086003` reverified Central and successfully
-submitted `v0.1.1-rc1` to the Portal. Public Portal verification is blocked by
-approval according to the operator's account/email; anonymous and OAuth probes
-returned identical not-found pages, while implementation files redirected to
-Central. The Central-primary correction permits final publication after accepted
-Portal submission, explicitly records public verification as pending, and provides
-a read-only follow-up workflow. Use `portal_submission_run_id=44257086003` to
-resume without submitting again. No workflow was dispatched or publication made
-by this local change. Older `0.1.0` notes below are historical.
+Release `0.1.1` completed in promotion run `44268075229` and was published at
+`2026-11-18T08:36:34Z`. The Portal is now approved. Follow-up run `44282532213`
+stopped because its final-manifest input contained the candidate digest. The
+correct sealed digest is
+`b4c5a5e5af8ed4973187346088cf8de8ea267d4f615dd62c44ff534dd09c1801`,
+verified against both the producer artifact and the published manifest.
+
+A live read-only check found the five implementation files byte-identical, while
+the Portal regenerated the marker POM with the same coordinates/dependency and
+omitted descriptive metadata/parent. The local correction validates only that
+specific mapping and records both observed/retained hashes. No package, release,
+tag or committed docs snapshot was changed, and no workflow was dispatched.
 
 ## Composition and baselines
 
@@ -68,6 +71,14 @@ by this local change. Older `0.1.0` notes below are historical.
 
 ## Validation evidence
 
+- [x] Approved Portal correction: 87 Python tests and 23 subtests, repository
+  `check` and lint passed. Live anonymous readback verified five exact files plus
+  the regenerated marker mapping, and a real `0.1.1` Portal consumer succeeded.
+  Evidence: `build/portal-followup-0.1.1-diagnosis/`. The actual read-only workflow
+  also passed in `gh act` with a regenerated-marker fixture, recording observed
+  and retained hashes with no registry or Release uploads. Evidence:
+  `build/portal-marker-rehearsal/results.json`. The corrected workflow has not been
+  dispatched against GitHub; the published final manifest remains unchanged.
 - [x] Central-primary Python regressions: 69 tests and 23 subtests passed, including
   installed-wheel publication/recovery with pending Portal evidence, prior-run
   identity/candidate checks, and read-only follow-up workflow policy. Repository
@@ -145,17 +156,11 @@ by this local change. Older `0.1.0` notes below are historical.
 - [x] The later `0.1.1` Central publication and verification succeeded, superseding
   the old attempt's missing-public-key deployment blocker. No key material was read
   during this change.
-- [x] Central and Portal submission jobs succeeded for `0.1.1`; initial public
-  Portal approval is outstanding according to the operator. The local previous-run
-  reader verified run `44257086003`, successful job `134642006592`, and the exact
-  retained candidate manifest. Evidence: `build/central-primary-live-readonly/`.
-- [ ] Merge these Central-primary changes, then separately authorize promotion of
-  existing `v0.1.1-rc1` with its retained manifest digest and
-  `portal_submission_run_id=44257086003`. Do not upload again or rebuild candidates.
-  Require every essential final job to succeed and retain the sealed digest.
-- [ ] After Portal approval, separately dispatch `release-verify-portal.yml` with
-  version `0.1.1` and the sealed final-manifest digest. Retain its evidence; do not
-  edit the locked release to replace the original pending record.
+- [x] Central and Portal submission succeeded, and final `0.1.1` publication
+  completed in run `44268075229`. No promotion rerun or new candidate is needed.
+- [ ] Merge the marker-readback correction with successful CI, then freshly
+  dispatch `release-verify-portal.yml` for `0.1.1` using the sealed digest above.
+  Retain the follow-up evidence; do not change the locked pending snapshot.
 - [ ] Preserve the historical `0.1.0` tag/candidate and record their incomplete
   publication state during docs curation. They are not the current recovery target.
 - [ ] After successful publication, manually import exact-tag docs, curate release

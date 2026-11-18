@@ -115,13 +115,26 @@ There is no invented secondary-target kind or v2 manifest. This does not
 provide registry-wide enumeration of unknown extra coordinates. It verifies the
 finite declared release inventory and rejects conflicting bytes at those identities.
 The Portal registration-page check supplements Maven readback because Central
-fallback alone cannot prove Portal registration. Live first-release validation must
-confirm the Portal retains the expected POM/module bytes and registration semantics.
-Conflicts found during promotion still block final publication. The read-only
-`release-verify-portal.yml` follows approval and records exact-byte/consumer evidence
-separately, bound to the sealed final-manifest digest. It never edits the immutable
-release. If later Portal verification finds transformed files, retain the release
-and record the discrepancy; do not claim success or rewrite published artifacts.
+fallback alone cannot prove Portal registration. Its implementation POM, Gradle
+module metadata and three JARs must match the retained bytes exactly.
+
+The Portal regenerates the plugin-marker POM. For that file alone, a byte mismatch
+may pass `plugin-marker-mapping-v1`: model version `4.0.0`, packaging `pom`, exact
+marker coordinates `PLUGIN_ID:PLUGIN_ID.gradle.plugin:VERSION`, and exactly one
+unqualified dependency on `org.buildish.atr-maven-bundle:gradle-plugin:VERSION`.
+No extra dependencies, scopes, classifiers, profiles, repositories or properties
+are accepted. The retained marker must have the same mapping; its omitted parent
+must contain only descriptive metadata, with no dependency management, properties,
+profiles, repositories or other resolution settings. Formatting, schema-location
+spelling and the removed name/description do not affect this mapping. Central still
+requires the original marker bytes. See [Gradle's marker contract](https://docs.gradle.org/current/userguide/plugins_intermediate.html#sec:plugin_markers).
+
+Portal readback records the observed marker SHA-256/size, retained SHA-256/size,
+and mapping-rule identity; it never labels rewritten bytes as byte-identical.
+The read-only `release-verify-portal.yml` follows approval, runs the consumer, and
+records this evidence separately, bound to the sealed final-manifest digest. It
+never edits the immutable release. Other mismatches still fail; retain the release
+and record the discrepancy rather than rewriting published artifacts.
 
 An optional upstream improvement would add typed `maven-central` and
 `gradle-plugin-portal` publication/verification records: stable coordinates, finite

@@ -228,8 +228,26 @@ def publish_portal(repository, version):
             destination = portal / path.relative_to(repository)
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_bytes(path.read_bytes())
+    plugin = "org.buildish.atr-maven-bundle.gradle-plugin"
+    marker = (
+        portal
+        / f"{plugin.replace('.', '/')}/{plugin}.gradle.plugin/{version}/{plugin}.gradle.plugin-{version}.pom"
+    )
+    if marker.exists():
+        # The live Portal generates this mapping rather than retaining the POM.
+        marker.write_bytes(portal_marker(version))
     (root() / "portal-registration").write_text(version)
     record("upload-portal", version=version)
+
+
+def portal_marker(version):
+    plugin = "org.buildish.atr-maven-bundle.gradle-plugin"
+    return f"""<project xmlns="http://maven.apache.org/POM/4.0.0">
+      <modelVersion>4.0.0</modelVersion><groupId>{plugin}</groupId>
+      <artifactId>{plugin}.gradle.plugin</artifactId><version>{version}</version><packaging>pom</packaging>
+      <dependencies><dependency><groupId>org.buildish.atr-maven-bundle</groupId>
+      <artifactId>gradle-plugin</artifactId><version>{version}</version></dependency></dependencies>
+    </project>""".encode()
 
 
 if __name__ == "__main__":

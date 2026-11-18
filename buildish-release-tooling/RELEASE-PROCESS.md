@@ -291,9 +291,20 @@ gh workflow run release-verify-portal.yml --repo buildish-tooling/buildish-atr-m
   --ref main -f version=0.1.1 -f final_manifest_digest=SEALED_MANIFEST_SHA256
 ```
 
+`final_manifest_digest` identifies **`release-manifest-v1.json`**, rather than the
+candidate manifest used for promotion. For the published `0.1.1` release, the
+producer artifact, GitHub asset digest and downloaded bytes all agree on
+`b4c5a5e5af8ed4973187346088cf8de8ea267d4f615dd62c44ff534dd09c1801`.
+Run `44282532213` used the candidate digest and correctly stopped before Portal
+verification. Freshly dispatch this workflow after deploying the marker-readback
+correction; rerunning the old jobs retains the old exact-byte marker check.
+
 This workflow selects the exact published final and candidate from the digest-bound
 manifest, verifies both using the pinned CLI, checks anonymous Portal registration
-and all retained primary bytes, and runs a fresh consumer. Missing/transient data
+and the five retained implementation files byte-for-byte, validates the Portal's
+regenerated marker using the narrow mapping rule in the release contract, and runs
+a fresh consumer. The marker's observed and retained hashes/sizes are recorded
+separately. Missing/transient data
 retries within 960 seconds; conflicts fail immediately. It uses no registry secrets
 or publication permissions. On success, retain `portal-follow-up-VERSION-RUN_ID`
 and the workflow run URL as later evidence. The immutable release's original
