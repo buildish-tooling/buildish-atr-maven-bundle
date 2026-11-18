@@ -1,0 +1,103 @@
+# Copyright 2026 The Buildish Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+
+name: Verify Approved Plugin Portal Release
+'on':
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact published final version X.Y.Z
+        required: true
+        type: string
+      final_manifest_digest:
+        description: Retained SHA-256 of the sealed release-manifest-v1.json
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: buildish-portal-verification-${{ github.repository }}-${{ inputs.version }}
+  cancel-in-progress: false
+jobs:
+  verify-portal:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.workflow_sha }}
+        persist-credentials: false
+        fetch-depth: 1
+    - uses: $/.github/actions/setup-release-tooling
+      id: tooling
+    - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880
+      with:
+        distribution: temurin
+        java-version: |-
+          17
+          21
+        overwrite-settings: false
+    - name: Select the sealed published release
+      id: final
+      run: |
+        set -euo pipefail
+        python3 -B buildish-release-tooling/workflow.py preflight portal-verification
+        mkdir -p "$RUNNER_TEMP/portal"
+        test "$(gh release view "v$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = false
+        gh release download "v$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" --pattern release-manifest-v1.json --dir "$RUNNER_TEMP/portal"
+        python3 -B buildish-release-tooling/registries.py final-inputs "$RUNNER_TEMP/portal/release-manifest-v1.json" "$FINAL_MANIFEST_DIGEST" "$RELEASE_VERSION"
+      env:
+        BUILDISH_RELEASE_TOOLING_PYTHON: ${{ steps.tooling.outputs.python }}
+        RELEASE_VERSION: ${{ inputs.version }}
+        FINAL_MANIFEST_DIGEST: ${{ inputs.final_manifest_digest }}
+        GH_TOKEN: ${{ github.token }}
+    - name: Verify the retained candidate and immutable final publication
+      id: state
+      run: |
+        set -euo pipefail
+        python3 -B buildish-release-tooling/workflow.py preflight promotion
+        bash buildish-release-tooling/release-tooling.sh verify-github-candidate --candidate-tag "$CANDIDATE_TAG" --candidate-manifest-digest "$CANDIDATE_MANIFEST_DIGEST" --candidate-manifest-output "$RUNNER_TEMP/portal/candidate-manifest.json"
+        python3 -B buildish-release-tooling/workflow.py download "$RUNNER_TEMP/portal/candidate-manifest.json" "$CANDIDATE_MANIFEST_DIGEST" "$RUNNER_TEMP/assets" "$RELEASE_VERSION"
+        MANIFEST_PATH="$RUNNER_TEMP/promotion.json" bash buildish-release-tooling/release-tooling.sh resolve-promotion --candidate-tag "$CANDIDATE_TAG" --candidate-manifest "$RUNNER_TEMP/portal/candidate-manifest.json" --candidate-manifest-digest "$CANDIDATE_MANIFEST_DIGEST" "$RELEASE_VERSION"
+        python3 -B buildish-release-tooling/registries.py final-state "$RUNNER_TEMP/promotion.json" "$RUNNER_TEMP/portal/release-manifest-v1.json" "$FINAL_MANIFEST_DIGEST" "$RUNNER_TEMP/state.json"
+        digest="$(sha256sum "$RUNNER_TEMP/state.json" | cut -d' ' -f1)"
+        python3 -B buildish-release-tooling/workflow.py fetch-tag "$RUNNER_TEMP/state.json" "$digest"
+        MANIFEST_PATH="$RUNNER_TEMP/portal/github-verification.json" bash buildish-release-tooling/release-tooling.sh verify-github-final-release --release-state "$RUNNER_TEMP/state.json"
+        python3 -B buildish-release-tooling/workflow.py unpack "$RUNNER_TEMP/assets/buildish-atr-maven-bundle-$RELEASE_VERSION-maven.zip" "$RUNNER_TEMP/repository" "$RELEASE_VERSION"
+      env:
+        BUILDISH_RELEASE_TOOLING_PYTHON: ${{ steps.tooling.outputs.python }}
+        RELEASE_VERSION: ${{ inputs.version }}
+        CANDIDATE_TAG: ${{ steps.final.outputs.candidate_tag }}
+        CANDIDATE_MANIFEST_DIGEST: ${{ steps.final.outputs.candidate_manifest_digest }}
+        FINAL_MANIFEST_DIGEST: ${{ inputs.final_manifest_digest }}
+        GH_TOKEN: ${{ github.token }}
+    - name: Verify anonymous Portal availability and consumer use
+      run: |
+        set -euo pipefail
+        python3 -B buildish-release-tooling/registries.py verify portal "$RUNNER_TEMP/repository" "$RELEASE_VERSION" "$RUNNER_TEMP/portal/readback.json" --attempts 91 --retry-delay 10 --total-timeout 960
+        bash buildish-release-tooling/consume.sh "https://plugins.gradle.org/m2/" "$RELEASE_VERSION" "$RUNNER_TEMP/consumer" | tee "$RUNNER_TEMP/portal/consumer.log"
+        python3 -B buildish-release-tooling/workflow.py seal "$RUNNER_TEMP/portal"
+        printf 'Portal public verification passed: v%s; sealed final manifest SHA-256: %s\n' "$RELEASE_VERSION" "$FINAL_MANIFEST_DIGEST" >> "$GITHUB_STEP_SUMMARY"
+      env:
+        BUILDISH_RELEASE_TOOLING_PYTHON: ${{ steps.tooling.outputs.python }}
+        RELEASE_VERSION: ${{ inputs.version }}
+        FINAL_MANIFEST_DIGEST: ${{ inputs.final_manifest_digest }}
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: portal-follow-up-${{ inputs.version }}-${{ github.run_id }}
+        path: ${{ runner.temp }}/portal
+        if-no-files-found: error
+        retention-days: 90
+        overwrite: true

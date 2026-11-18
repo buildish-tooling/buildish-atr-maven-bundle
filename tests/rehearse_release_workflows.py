@@ -121,7 +121,7 @@ def prepare(args):
         '\nprintf "%s/bin\\n" "$RUNNER_TEMP/release-tooling" >> "$GITHUB_PATH"\n'
     )
     dump(action, payload)
-    for name in ("candidate", "promote"):
+    for name in ("candidate", "promote", "verify-portal"):
         path = frozen / f".github/workflows/release-{name}.yml"
         workflow = yaml.safe_load(path.read_text())
         workflow["env"] = {
@@ -180,8 +180,19 @@ def prepare(args):
     return output, frozen
 
 
-def scenario(output, frozen, name, promotion=False, retained_manifest=False):
+def scenario(
+    output,
+    frozen,
+    name,
+    promotion=False,
+    retained_manifest=False,
+    followup_manifest=None,
+):
     behaviors = [
+        {
+            "match": {"argv_prefix": ["release", "view"], "argv_contains": ["isDraft"]},
+            "result": {"stdout": "false"},
+        },
         {
             "match": {"argv_contains": ["/check-runs?per_page=100"]},
             "result": {
@@ -235,6 +246,18 @@ def scenario(output, frozen, name, promotion=False, retained_manifest=False):
             "candidate_manifest_digest": "harness:seeded-release-asset-sha256:candidate-manifest.json",
         }
     )
+    if followup_manifest is not None:
+        inputs = {
+            "version": VERSION,
+            "final_manifest_digest": followup_manifest.removeprefix("sha256:"),
+        }
+    workflow_name = (
+        "verify-portal"
+        if followup_manifest is not None
+        else "promote"
+        if promotion
+        else "candidate"
+    )
     payload = {
         "name": name,
         "backend": "act",
@@ -247,7 +270,7 @@ def scenario(output, frozen, name, promotion=False, retained_manifest=False):
         },
         "tool_behaviors": {"gh": behaviors},
         "workflow": {
-            "path": f"source/.github/workflows/release-{'promote' if promotion else 'candidate'}.yml",
+            "path": f"source/.github/workflows/release-{workflow_name}.yml",
             "harness_config": "release-harness.yaml",
             "inputs": inputs,
             "gpg_fixture": "generated-signing-key",
@@ -331,7 +354,7 @@ os.execvp("gh", ["gh", "act", *arguments, "--remote-name", "act-context"])
         if (
             result.returncode == 0
             or actual.get(expected_failure) not in ("failure", "failed")
-            or actual.get("publish") != "not-executed"
+            or actual.get("publish", "not-executed") != "not-executed"
         ):
             raise ValueError(
                 f"Expected verifier/conflict failure did not block publication: {actual}"
@@ -390,6 +413,40 @@ def uploads(output):
 
 def set_policy(output, policy):
     (output / "registries/policy.json").write_text(json.dumps(policy) + "\n")
+
+
+def portal_followup_cases(output, frozen, promotion, sealed_digest):
+    """Approval changes visibility; follow-up must never change the final release."""
+    cases = {}
+    before = len(uploads(output))
+    for name, policy, failure in (
+        ("follow-up-pending", {"pending_portal": True}, "verify-portal"),
+        ("follow-up-approved", {}, None),
+    ):
+        set_policy(output, policy)
+        if (output / (name + ".json")).exists():
+            workspace, report = audit_retained_report(
+                output, name, expected_failure=failure
+            )
+        else:
+            workspace, report = run(
+                output,
+                scenario(output, frozen, name, followup_manifest=sealed_digest),
+                seed=promotion,
+                expected_failure=failure,
+            )
+        assert report["github_asset_uploads"] == 0
+        assert final_release(workspace, published=True) == sealed_digest
+        if failure:
+            assert "portal publication not visible within verification budget" in (
+                output / (name + ".log")
+            ).read_text()
+        cases[name] = {
+            "actual_job_statuses": report["actual_job_statuses"],
+            "github_asset_uploads": 0,
+        }
+    assert len(uploads(output)) == before
+    return cases
 
 
 def rejected_central_deployment(output, frozen, candidate):
@@ -486,7 +543,7 @@ def audit_retained_report(output, name, *, expected_failure=None):
         actual[job] = status.read_text().strip() if status.exists() else "not-executed"
     if expected_failure:
         assert actual.get(expected_failure) in ("failure", "failed"), actual
-        assert actual.get("publish") == "not-executed", actual
+        assert actual.get("publish", "not-executed") == "not-executed", actual
     else:
         assert actual and all(
             value == "success"
@@ -549,7 +606,7 @@ def main():
     if "first-publication" in progress:
         promotion, report = audit_retained_report(output, "first-publication")
     else:
-        set_policy(output, {})
+        set_policy(output, {"pending_portal": True})
         before = len(uploads(output))
         promotion, report = run(
             output,
@@ -566,15 +623,16 @@ def main():
         progress_path.write_text(json.dumps(progress, indent=2))
     print(f"First publication executed: {promotion}", flush=True)
     sealed_digest = final_release(promotion, published=True)
+    followup = portal_followup_cases(output, frozen, promotion, sealed_digest)
     for name, seed, policy, retained, failure in (
         ("complete-recovery", promotion, {}, True, None),
         ("partial-recovery", promotion, {"partial_preflight": "central"}, True, None),
         (
             "failed-verification",
             candidate,
-            {"fail_verification": "portal"},
+            {"fail_verification": "central"},
             False,
-            "verify-portal",
+            "verify-central",
         ),
         ("verification-recovery", None, {}, False, None),
         (
@@ -633,6 +691,7 @@ def main():
                 "registry_uploads": uploads(output),
                 "cases": cases,
                 "central_validation_failure": central_failure,
+                "portal_followup": followup,
             },
             indent=2,
         )

@@ -60,6 +60,8 @@ publication:
     repository: buildish-tooling/buildish-atr-maven-bundle
   convenience: []
   # Registry publication/readback is component-owned; 0.1.4 has no Central/Portal adapter.
+  # Central readback and accepted Portal submission gate final publication;
+  # anonymous Portal verification follows approval in a separate read-only workflow.
   secondary: []
 tags:
   final_mode: exact-source-commit

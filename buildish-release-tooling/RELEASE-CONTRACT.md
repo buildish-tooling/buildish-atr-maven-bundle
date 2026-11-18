@@ -25,9 +25,9 @@ bundles to ATR, Central or Njord.
 
 | Destination | Content and consumer | Completion condition |
 | --- | --- | --- |
-| GitHub (authoritative release record) | Immutable `vX.Y.Z`, reviewed notes, signed Maven ZIP, SHA-256/SHA-512 sidecars, `release-manifest-v1.json` | Publish last, after registry readback and consumer checks; verify locked inventory |
-| Maven Central (required distribution) | `org.buildish.atr-maven-bundle:gradle-plugin:X.Y.Z`, parent POM, plugin marker, module metadata, sources/Javadoc, signatures/checksums | Exact retained files visible and a settings-plugin consumer succeeds |
-| Gradle Plugin Portal (required distribution) | Plugin `org.buildish.atr-maven-bundle.gradle-plugin`, implementation, marker and metadata | Version registered, retained primary bytes readable, settings-plugin consumer succeeds |
+| GitHub (authoritative release record) | Immutable `vX.Y.Z`, reviewed notes, signed Maven ZIP, SHA-256/SHA-512 sidecars, `release-manifest-v1.json` | Publish last, after Central readback/consumer checks and accepted Portal submission; verify locked inventory |
+| Maven Central (primary distribution) | `org.buildish.atr-maven-bundle:gradle-plugin:X.Y.Z`, parent POM, plugin marker, module metadata, sources/Javadoc, signatures/checksums | Exact retained files visible and a settings-plugin consumer succeeds |
+| Gradle Plugin Portal (secondary distribution) | Plugin `org.buildish.atr-maven-bundle.gradle-plugin`, implementation, marker and metadata | Successful submission gates GitHub publication; public approval/readback/consumer verification follows separately |
 
 The ZIP contains seven primary files: parent POM; plugin POM, module metadata,
 shaded implementation JAR, sources JAR, Javadoc JAR; and the marker POM. Every primary
@@ -39,8 +39,8 @@ NTBs, consumer-created ZIPs, unshaded/test-fixture JARs, OCI images, npm package
 PyPI distributions. GitHub's generated source archives identify source, without
 promising archive byte stability across tag names.
 
-Both registries are required by the maintainer's adoption decision. Native Maven
-Publish exports the component payloads without credentials. A separate
+Central publication and Portal submission are required; public Portal approval
+follows independently. Native Maven Publish exports the component payloads without credentials. A separate
 `build-tooling` job builds ATR Maven Bundle from `github.workflow_sha`, independently
 of the selected release source. Its digest-bound local repository is the only
 source for the packaging plugin loaded by the trusted publisher build.
@@ -106,15 +106,22 @@ Later retry diagnostics are not assumed to be in the wheel.
 
 0.1.4 has no Central/Portal secondary-publication adapter. The component owns upload,
 exact-byte readback, propagation budgets and consumer checks. Supported generic
-`verification_results` bind deterministic readback records into the sealed v1
-manifest; there is no invented secondary-target kind or v2 manifest. This does not
+`verification_results` bind deterministic Central readback and accepted Portal
+submission records into the sealed v1 manifest. The Portal record explicitly says
+`public_verification: pending`; it does not claim approval or consumer availability.
+Submission provenance is retained in the producer's workflow artifact. Run IDs are
+excluded from the sealed facts so matching recovery preserves identical bytes.
+There is no invented secondary-target kind or v2 manifest. This does not
 provide registry-wide enumeration of unknown extra coordinates. It verifies the
 finite declared release inventory and rejects conflicting bytes at those identities.
 The Portal registration-page check supplements Maven readback because Central
 fallback alone cannot prove Portal registration. Live first-release validation must
 confirm the Portal retains the expected POM/module bytes and registration semantics.
-If it transforms them, stop promotion, retain the candidate and any draft, and document
-the precise equivalence/verification contract before changing the gate.
+Conflicts found during promotion still block final publication. The read-only
+`release-verify-portal.yml` follows approval and records exact-byte/consumer evidence
+separately, bound to the sealed final-manifest digest. It never edits the immutable
+release. If later Portal verification finds transformed files, retain the release
+and record the discrepancy; do not claim success or rewrite published artifacts.
 
 An optional upstream improvement would add typed `maven-central` and
 `gradle-plugin-portal` publication/verification records: stable coordinates, finite

@@ -32,7 +32,19 @@ Projects without Maven publications contribute no bundle files.
 
 The plugin targets **Gradle 9.1 or newer** and **Java 17 or newer**. Apply it in
 `settings.gradle.kts` or `settings.gradle`, configure your normal Maven
-publications, and select a root task:
+publications, and select a root task. Maven Central is the primary distribution;
+add it to your settings plugin repositories so Portal approval does not delay use:
+
+```kotlin
+pluginManagement {
+    repositories {
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+```
+
+Then select a root task:
 
 ```shell
 ./gradlew :atrCentralArchive

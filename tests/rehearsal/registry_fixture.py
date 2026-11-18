@@ -169,6 +169,13 @@ def urlopen(request, timeout=None, **kwargs):
         path = root() / target / relative
     policy_file = root() / "policy.json"
     policy = json.loads(policy_file.read_text()) if policy_file.exists() else {}
+    if (
+        target == "portal"
+        and policy.get("pending_portal")
+        and parsed.path.startswith("/plugin/")
+    ):
+        # Submission exists, but anonymous readers cannot see it before approval.
+        path = root() / "unavailable-pending-registration"
     job = os.environ.get("BUILDISH_HARNESS_JOB_ID", "")
     if policy.get("fail_verification") == target and job == "verify-" + target:
         raise urllib.error.HTTPError(url, 503, "fixture verification outage", {}, None)
@@ -183,13 +190,11 @@ def urlopen(request, timeout=None, **kwargs):
         if target == "portal" and parsed.path.startswith("/plugin/"):
             _, _, plugin_id, version = parsed.path.split("/")
             body = (
-                '<html><head><title>Gradle - Plugin Not Found</title></head>'
-                f'<body><h1>Version &quot;{version}&quot; of plugin '
-                f'&quot;{plugin_id}&quot; not found</h1></body></html>'
+                "<html><head><title>Gradle - Plugin Not Found</title></head>"
+                f"<body><h1>Version &quot;{version}&quot; of plugin "
+                f"&quot;{plugin_id}&quot; not found</h1></body></html>"
             ).encode()
-            raise urllib.error.HTTPError(
-                url, 400, "Bad Request", {}, io.BytesIO(body)
-            )
+            raise urllib.error.HTTPError(url, 400, "Bad Request", {}, io.BytesIO(body))
         raise urllib.error.HTTPError(url, 404, "fixture not published", {}, None)
     data = path.read_bytes()
     if policy.get("conflict") == target and parsed.path.endswith(".jar"):

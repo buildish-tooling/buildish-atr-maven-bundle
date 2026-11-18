@@ -16,21 +16,22 @@ limitations under the License.
 
 # Release readiness — 2026-11-18
 
-Central rejected the first `0.1.0` candidate's Maven bundle. The local correction
-uses ATR Maven Bundle for signing, checksums and ZIP creation, removes NMCP, and
-keeps a bounded Python Central client. No replacement candidate, key upload,
-workflow dispatch or remote publication was performed by this correction.
+Central is the primary distribution. Final publication requires verified Central
+publication and accepted Portal submission; public Portal verification follows
+approval in a separate workflow. No candidate was rebuilt, workflow dispatched,
+credential changed or remote publication performed by this local correction.
 See [contract](RELEASE-CONTRACT.md), [operator guide](RELEASE-PROCESS.md) and
 [docs maintenance](../tools/versioned-docs/README.md).
 
-Latest live attempt: promotion run `44253747978` for `v0.1.1-rc1` passed Central
-publication (`PUBLISHED`) and exact-byte/consumer verification, then stopped at
-`inspect-portal`. The Portal's unpublished-version page returned HTTP 400 instead
-of 404. The local correction recognizes only that exact not-found page and keeps
-other 400s fatal. Deploy it and freshly dispatch promotion with the same approved
-candidate tag/digest; Central's immutable files must be reused. Portal publication
-and final GitHub publication have not completed in that run. Earlier `0.1.0`
-recovery notes below remain historical; the active publication version is `0.1.1`.
+Latest live attempt: run `44257086003` reverified Central and successfully
+submitted `v0.1.1-rc1` to the Portal. Public Portal verification is blocked by
+approval according to the operator's account/email; anonymous and OAuth probes
+returned identical not-found pages, while implementation files redirected to
+Central. The Central-primary correction permits final publication after accepted
+Portal submission, explicitly records public verification as pending, and provides
+a read-only follow-up workflow. Use `portal_submission_run_id=44257086003` to
+resume without submitting again. No workflow was dispatched or publication made
+by this local change. Older `0.1.0` notes below are historical.
 
 ## Composition and baselines
 
@@ -55,9 +56,11 @@ recovery notes below remain historical; the active publication version is `0.1.1
   polls authenticated deployment status until `PUBLISHED`; `FAILED` immediately
   fails the upload job with validation details. Safe status/readback requests retry
   transient errors within explicit budgets. Ambiguous uploads require inspection.
-- [x] Both Central and Plugin Portal public readback/consumers must pass before
-  sealing/publishing GitHub. Matching sealed bytes are reused; GitHub is published
-  last with the exact producer manifest digest and no subsequent asset uploads.
+- [x] Central readback/consumer checks and successful Portal submission gate final
+  publication. Portal public approval/readback/consumer verification follows in
+  `release-verify-portal.yml`, selected by sealed final-manifest SHA-256. The final
+  manifest records pending verification truthfully and stays unchanged afterward.
+  Matching sealed bytes are reused; GitHub publishes with the producer digest.
 - [x] Component-owned versioned-docs helpers derive from source-only reference
   `07fbbefeaf300dd12aa5734e0e4172bc0229a7a9`; they are not in the pinned package.
   Existing scoped component metadata and aggregate binding/action were reviewed;
@@ -65,6 +68,19 @@ recovery notes below remain historical; the active publication version is `0.1.1
 
 ## Validation evidence
 
+- [x] Central-primary Python regressions: 69 tests and 23 subtests passed, including
+  installed-wheel publication/recovery with pending Portal evidence, prior-run
+  identity/candidate checks, and read-only follow-up workflow policy. Repository
+  `check`, changed-file lint and workflow scan passed. Real prior-submission proof
+  was checked read-only; no deployment credentials were read.
+- [x] Central-primary actual-workflow rehearsal passed all nine promotion jobs
+  with approval pending, follow-up failure before approval, follow-up success
+  afterward, and locked recovery with both uploads skipped. Evidence:
+  `build/central-primary-rehearsal/results.json`. Follow-up and recovery performed
+  zero registry/Release asset uploads; matching sealed bytes were preserved.
+  All jobs recorded installed wheel `0.1.4` in Python 3.14 `site-packages`.
+  This is isolated fixture evidence, not live Portal approval or proof of hosted
+  GitHub skip propagation. Older matrices below cover their historical contracts.
 - [x] Portal HTTP 400 correction: 57 Python tests and 23 subtests, repository
   `check` and changed-file lint passed. Read-only inspection of the real
   `v0.1.1-rc1` bundle, verified against the run's candidate-manifest digest,
@@ -125,18 +141,23 @@ recovery notes below remain historical; the active publication version is `0.1.1
   `0c37378301845806620140102d0b32e009d055d4`. All seven public Central primary URLs
   returned 404 at diagnosis; account-side deployment state still needs inspection.
 - [ ] Review/commit/deploy these corrections with successful trusted CI. Keep main's
-  `version.txt` at `0.1.0-SNAPSHOT` until the normal post-release development bump.
-- [ ] Publish the existing public certificate (including signing subkey) to a
-  Central-supported keyserver and confirm lookup. Validate the actual exported
-  key/passphrase through approved isolated signing; no normal keyring changes.
-- [ ] Confirm namespace/plugin-ID ownership, accepted terms, initial Portal approval,
-  draft write-token usability and GitHub Release immutability setting.
-- [ ] New bundle/signatures require a new candidate. To retain `0.1.0`, use the
-  exact original source commit above with the corrected trusted main workflow.
-  Preserve RC1 and the final tag. Different source or conflicting published
-  coordinates require a new version; do not retarget/delete immutable state.
-- [ ] Retain/review the new candidate's actual tag and manifest digest, then
-  separately authorize promotion. Require every essential final job to succeed.
+  `version.txt` at `0.1.1-SNAPSHOT` until the normal post-release development bump.
+- [x] The later `0.1.1` Central publication and verification succeeded, superseding
+  the old attempt's missing-public-key deployment blocker. No key material was read
+  during this change.
+- [x] Central and Portal submission jobs succeeded for `0.1.1`; initial public
+  Portal approval is outstanding according to the operator. The local previous-run
+  reader verified run `44257086003`, successful job `134642006592`, and the exact
+  retained candidate manifest. Evidence: `build/central-primary-live-readonly/`.
+- [ ] Merge these Central-primary changes, then separately authorize promotion of
+  existing `v0.1.1-rc1` with its retained manifest digest and
+  `portal_submission_run_id=44257086003`. Do not upload again or rebuild candidates.
+  Require every essential final job to succeed and retain the sealed digest.
+- [ ] After Portal approval, separately dispatch `release-verify-portal.yml` with
+  version `0.1.1` and the sealed final-manifest digest. Retain its evidence; do not
+  edit the locked release to replace the original pending record.
+- [ ] Preserve the historical `0.1.0` tag/candidate and record their incomplete
+  publication state during docs curation. They are not the current recovery target.
 - [ ] After successful publication, manually import exact-tag docs, curate release
   selection/latest and deploy the aggregate site. Incomplete/retracted attempts
   remain hidden/withdrawn inventory records if not completed; a tag alone is not

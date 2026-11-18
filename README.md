@@ -33,10 +33,19 @@ The authored website content lives in [site/pages/](site/pages/) and [docs/](doc
 ## Configure settings and native publications
 
 Apply the plugin in `settings.gradle.kts`, using an available plugin version and
-its repository. It is a settings plugin; applying it to a project fails.
+its repository. Maven Central is the primary distribution; configuring it also
+allows resolution while a Portal submission awaits approval. It is a settings
+plugin; applying it to a project fails.
 
 ```kotlin
 import org.buildish.atrmavenbundle.gradleplugin.AtrMavenBundleExtension
+
+pluginManagement {
+    repositories {
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
 
 plugins {
     id("org.buildish.atr-maven-bundle.gradle-plugin") version "<version>"
@@ -225,8 +234,9 @@ provisioning independently of TestKit's Gradle distribution cache.
 
 Maintainers should read the [release contract](buildish-release-tooling/RELEASE-CONTRACT.md),
 [operator guide](buildish-release-tooling/RELEASE-PROCESS.md), and
-[readiness checklist](buildish-release-tooling/READINESS.md). Releases require Maven
-Central and the Gradle Plugin Portal, followed by GitHub finalization. Released docs
+[readiness checklist](buildish-release-tooling/READINESS.md). Finalization requires
+verified Maven Central publication and accepted Plugin Portal submission. Public
+Portal verification follows approval in a separate read-only workflow. Released docs
 are maintained separately with the [versioned-docs helpers](tools/versioned-docs/README.md).
 
 ## Community

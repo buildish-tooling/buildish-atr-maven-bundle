@@ -21,6 +21,9 @@ import base64
 import hashlib
 import json
 import os
+import re
+import subprocess
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -30,7 +33,17 @@ from http.client import IncompleteRead
 from pathlib import Path
 from urllib.parse import urlencode
 
-from workflow import PLUGIN, digest, primary_paths, read, signed_paths, write
+from workflow import (
+    PLUGIN,
+    REPOSITORY,
+    check_digest,
+    digest,
+    output,
+    primary_paths,
+    read,
+    signed_paths,
+    write,
+)
 
 BASES = {
     "central": "https://repo.maven.apache.org/maven2/",
@@ -270,9 +283,21 @@ def evidence(state_path, central_path, portal_path, destination):
             or record["base_url"] != BASES[target]
         ):
             raise ValueError("Registry evidence differs from approved release")
+        kind = (
+            "submission"
+            if record.get("public_verification") == "pending"
+            else "readback"
+        )
+        if kind == "submission" and (
+            target != "portal"
+            or record.get("submission") != "accepted"
+            or record.get("candidate_manifest_digest")
+            != state["candidate_manifest_digest"]
+        ):
+            raise ValueError("Pending Portal evidence differs from approved candidate")
         state.setdefault("verification_results", []).append(
             {
-                "kind": f"atr-maven-bundle-{target}-readback",
+                "kind": f"atr-maven-bundle-{target}-{kind}",
                 "uri": BASES[target],
                 "digest": digest(path),
                 "claims": {
@@ -281,6 +306,150 @@ def evidence(state_path, central_path, portal_path, destination):
             }
         )
     write(destination, state)
+
+
+def previous_portal_submission(run_id, candidate_digest):
+    """Read proof of an earlier successful submission of this exact candidate."""
+    if not re.fullmatch(r"[1-9][0-9]*", run_id):
+        raise ValueError("Expected a numeric Portal submission run ID")
+
+    def api(path, *options):
+        return json.loads(
+            subprocess.check_output(
+                ["gh", "api", f"repos/{REPOSITORY}/{path}", *options], text=True
+            )
+        )
+
+    run = api(f"actions/runs/{run_id}")
+    if (
+        run["repository"]["full_name"] != REPOSITORY
+        or run["path"] != ".github/workflows/release-promote.yml"
+        or run["event"] != "workflow_dispatch"
+        or run["head_branch"] != "main"
+        or run["status"] != "completed"
+    ):
+        raise ValueError(
+            "Prior submission must come from a completed trusted promotion run"
+        )
+    job_lines = subprocess.check_output(
+        [
+            "gh",
+            "api",
+            f"repos/{REPOSITORY}/actions/runs/{run_id}/jobs?per_page=100",
+            "--paginate",
+            "--jq",
+            ".jobs[] | @json",
+        ],
+        text=True,
+    ).splitlines()
+    jobs = [
+        job for job in map(json.loads, job_lines) if job["name"] == "publish-portal"
+    ]
+    if len(jobs) != 1 or jobs[0]["conclusion"] != "success":
+        raise ValueError("Prior Portal submission job did not succeed")
+    with tempfile.TemporaryDirectory(prefix="portal-submission-") as directory:
+        subprocess.run(
+            [
+                "gh",
+                "run",
+                "download",
+                run_id,
+                "--repo",
+                REPOSITORY,
+                "--name",
+                f"promotion-input-{run_id}",
+                "--dir",
+                directory,
+            ],
+            check=True,
+        )
+        check_digest(Path(directory) / "candidate-manifest.json", candidate_digest)
+    return {"run_id": run_id, "job_id": jobs[0]["id"], "workflow_sha": run["head_sha"]}
+
+
+def record_portal(
+    repository,
+    version,
+    candidate_path,
+    destination,
+    preflight_status,
+    publish_result,
+    prior_run="",
+):
+    candidate_digest = digest(candidate_path)
+    candidate = read(candidate_path)
+    if candidate["release"]["version"] != version:
+        raise ValueError("Portal submission version differs from candidate")
+    if publish_result not in {"success", "skipped"}:
+        raise ValueError(
+            "No successful Portal submission; upload job failed or was cancelled"
+        )
+    if prior_run:
+        proof = previous_portal_submission(prior_run, candidate_digest)
+    elif publish_result == "success":
+        proof = {"run_id": os.environ["GITHUB_RUN_ID"], "job": "publish-portal"}
+    elif preflight_status == "complete":
+        # Anonymous exact-byte inspection also establishes an accepted publication.
+        if inspect(repository, version, "portal") != "complete":
+            raise ValueError("Previously available Portal publication is incomplete")
+        proof = {"source": "matching public Portal publication"}
+    else:
+        raise ValueError(
+            "No successful Portal submission; supply its previous run ID to resume"
+        )
+    names = expected_files(repository, version, "portal")
+    record = {
+        "target": "portal",
+        "version": version,
+        "base_url": BASES["portal"],
+        "candidate_manifest_digest": candidate_digest,
+        "submission": "accepted",
+        "public_verification": "pending",
+        "files": {
+            name: {"sha256": digest(path), "size": path.stat().st_size}
+            for name, path in names.items()
+        },
+    }
+    # Stable sealed facts exclude run IDs: recovery must preserve matching bytes.
+    write(Path(destination) / "readback.json", record)
+    write(Path(destination) / "submission-proof.json", proof)
+    print(
+        "Portal submission accepted; public verification pending. Run release-verify-portal.yml after approval.",
+        flush=True,
+    )
+
+
+def final_inputs(manifest_path, expected, version):
+    check_digest(manifest_path, expected)
+    manifest = read(manifest_path)
+    if (
+        manifest["release"]["version"] != version
+        or manifest["release"]["component"]["id"] != "buildish-atr-maven-bundle"
+        or manifest["final_tag"]["name"] != "v" + version
+    ):
+        raise ValueError("Final manifest differs from selected release")
+    promoted = manifest["promoted_candidate"]
+    output("candidate_tag", promoted["candidate"]["tag"]["name"])
+    output("candidate_manifest_digest", promoted["manifest"]["digest"])
+
+
+def final_state(state_path, manifest_path, expected, destination):
+    check_digest(manifest_path, expected)
+    manifest, state = read(manifest_path), read(state_path)
+    promoted = manifest["promoted_candidate"]
+    if (
+        promoted["manifest"]["digest"] != state["candidate_manifest_digest"]
+        or promoted["candidate"] != state["candidate"]
+        or any(
+            manifest[key] != state[key]
+            for key in ("release", "source", "final_tag", "artifacts")
+        )
+    ):
+        raise ValueError("Final publication differs from retained candidate")
+    # The released CLI validates the sealed snapshot and these original references.
+    state["verification_results"] = manifest["verification_results"]
+    write(destination, state)
+    output("state_digest", digest(destination))
 
 
 def main():
@@ -306,6 +475,23 @@ def main():
     sub.add_argument("--total-timeout", type=float, default=960)
     sub = commands.add_parser("evidence")
     sub.add_argument("paths", nargs=4)
+    sub = commands.add_parser("record-portal")
+    for name in (
+        "repository",
+        "version",
+        "candidate",
+        "destination",
+        "preflight_status",
+        "publish_result",
+    ):
+        sub.add_argument(name)
+    sub.add_argument("--prior-run", default="")
+    sub = commands.add_parser("final-inputs")
+    for name in ("manifest", "digest", "version"):
+        sub.add_argument(name)
+    sub = commands.add_parser("final-state")
+    for name in ("state", "manifest", "digest", "destination"):
+        sub.add_argument(name)
     args = parser.parse_args()
     if args.command == "inspect":
         print(inspect(args.repository, args.version, args.target))
@@ -323,6 +509,20 @@ def main():
         upload_central(args.archive, args.result)
     elif args.command == "wait-central":
         wait_central(args.result, args.attempts, args.retry_delay, args.total_timeout)
+    elif args.command == "record-portal":
+        record_portal(
+            args.repository,
+            args.version,
+            args.candidate,
+            args.destination,
+            args.preflight_status,
+            args.publish_result,
+            args.prior_run,
+        )
+    elif args.command == "final-inputs":
+        final_inputs(args.manifest, args.digest, args.version)
+    elif args.command == "final-state":
+        final_state(args.state, args.manifest, args.digest, args.destination)
     else:
         evidence(*args.paths)
 

@@ -112,7 +112,9 @@ def test_central_admission_rejects_the_original_checksum_contract():
     }
 
 
-def test_portal_fixture_matches_live_unpublished_version_response(tmp_path, monkeypatch):
+def test_portal_fixture_matches_live_unpublished_version_response(
+    tmp_path, monkeypatch
+):
     monkeypatch.setenv(fixture.ROOT_ENV, str(tmp_path))
     url = "https://plugins.gradle.org/plugin/org.buildish.atr-maven-bundle.gradle-plugin/1.2.3"
     with pytest.raises(urllib.error.HTTPError) as error:
@@ -120,7 +122,7 @@ def test_portal_fixture_matches_live_unpublished_version_response(tmp_path, monk
     assert error.value.code == 400
     body = error.value.read().decode()
     assert "<title>Gradle - Plugin Not Found</title>" in body
-    assert 'Version &quot;1.2.3&quot; of plugin' in body
+    assert "Version &quot;1.2.3&quot; of plugin" in body
     assert "org.buildish.atr-maven-bundle.gradle-plugin" in body
 
 
@@ -278,3 +280,12 @@ def test_portal_fixture_requires_real_publisher_outputs(tmp_path, monkeypatch):
     fixture.publish_portal(publisher, "1.2.3")
     assert (tmp_path / "portal-registration").read_text() == "1.2.3"
     assert (tmp_path / "portal" / relative).read_bytes() == path.read_bytes()
+    policy = tmp_path / "policy.json"
+    policy.write_text(json.dumps({"pending_portal": True}))
+    page = "https://plugins.gradle.org/plugin/org.buildish.atr-maven-bundle.gradle-plugin/1.2.3"
+    with pytest.raises(urllib.error.HTTPError) as error:
+        fixture.urlopen(page)
+    assert error.value.code == 400
+    assert b"Plugin Not Found" in error.value.read()
+    policy.write_text("{}")
+    assert fixture.urlopen(page).read() == b"1.2.3"

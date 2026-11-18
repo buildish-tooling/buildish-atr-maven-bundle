@@ -65,6 +65,8 @@ MANIFEST_PATH="$PWD/promotion.json" call resolve-promotion --candidate-tag v1.2.
 call create-final-tag --promotion-state promotion.json
 MANIFEST_PATH="$PWD/stage.json" call stage-github-final-release --release-state promotion.json --asset maven.zip
 call verify-github-final-release --release-state promotion.json
+# Central is verified; Portal submission is accepted but public approval is pending.
+python3 -c 'import json,hashlib; p=json.load(open("portal.json")); p.update(submission="accepted",public_verification="pending",candidate_manifest_digest=hashlib.sha256(open("candidate-manifest.json","rb").read()).hexdigest()); json.dump(p,open("portal.json","w"),sort_keys=True)'
 # Supported generic verification records retain component-owned registry evidence.
 python3 buildish-release-tooling/registries.py evidence promotion.json central.json portal.json sealed-state.json
 mv sealed-state.json promotion.json
@@ -77,6 +79,9 @@ call publish-github-final-release --release-state promotion.json --require-manif
 call verify-github-final-release --release-state promotion.json
 # A new dispatch resolves fresh state without the previous readback records.
 MANIFEST_PATH="$PWD/fresh.json" call resolve-promotion --candidate-tag v1.2.3-rc1 --candidate-manifest candidate-manifest.json --candidate-manifest-digest "$candidate_digest" 1.2.3
+# Follow-up verification restores sealed evidence without rewriting the final manifest.
+GITHUB_OUTPUT="$PWD/followup.outputs" python3 buildish-release-tooling/registries.py final-state fresh.json release-manifest-v1.json "$sealed" followup.json
+call verify-github-final-release --release-state followup.json
 # 0.1.4 cannot restage custom sealed verification records against that bare state.
 if call stage-github-final-release --release-state fresh.json --asset maven.zip; then exit 43; fi
 # Independently repeat readbacks before restaging with the same component evidence.

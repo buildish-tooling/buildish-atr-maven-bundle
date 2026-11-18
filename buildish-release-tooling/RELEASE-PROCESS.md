@@ -235,26 +235,70 @@ the deployment receipt and polls its authenticated status endpoint until `PUBLIS
 960-second deadline. `FAILED` immediately fails that job and reports validation
 errors. The receipt artifact is retained even when validation fails. Public
 readback remains a separate check; upload acceptance is not publication success.
-Central must verify before Portal starts. Post-upload readback uses 91 attempts,
-10-second delays and a 960-second overall budget per registry. It checks Central primaries and signed
-sidecars, Portal primary bytes and version registration, then runs fresh consumers.
+Central is the primary distribution and must verify before Portal starts. Central
+readback checks primaries and signed sidecars, then runs a fresh settings-plugin
+consumer, using 91 attempts, 10-second delays and a 960-second readback budget.
 
-Both deterministic readback records are embedded as generic verification claims
-in the stable v1 manifest, with producer-bound SHA-256s. They are durable within the
-manifest, rather than additional late asset uploads. The final job fetches the exact
-final tag from checked state without checking it out and stages the GitHub draft
-with both readback records already in release state. This ordering lets 0.1.4
-validate component-owned verification records when reusing a retained sealed
-manifest. It preserves matching sealed bytes, attaches `release-manifest-v1.json`
-to the draft, publishes with
-`--require-manifest-digest`, and verifies without further uploads.
+Portal is secondary: successful submission is mandatory, but public approval may
+take days. The promotion job still named `verify-portal` now validates submission
+evidence, not anonymous Portal availability. It records `submission: accepted` and
+`public_verification: pending`; it does not poll for approval or run a Portal
+consumer. Upload errors, cancellations, conflicting public files and missing
+submission proof still block final GitHub publication.
+
+The Central readback and stable Portal submission records are embedded as generic
+claims in the sealed v1 manifest with producer-bound SHA-256s. Submission provenance
+is retained separately in the `portal-verification-RUN_ID` artifact. Run IDs stay
+out of the sealed record so recovery from matching public state preserves bytes.
+The final job fetches the exact final tag without checking it out, rebuilds these
+same records before staging, attaches the manifest to the draft, publishes with
+`--require-manifest-digest`, and verifies without further asset uploads.
 
 Require `resolve`, `stage`, `verify-central`, `verify-portal`, and `publish` each to
-succeed. `publish-central` and `publish-portal` may be intentionally skipped when
-matching files exist. An overall green run with skipped final publication is not a
-completed release. After completion, retain candidate/final digests and perform the
-manual versioned-docs import/curation/deployment. Docs deployment does not rebuild
-packages and cannot turn a failed package release into success.
+succeed. Upload jobs may be intentionally skipped for matching publications or an
+explicitly selected previous Portal submission. An overall green run with skipped
+final publication is not complete. Retain candidate/final digests and import/curate
+versioned docs after completion; docs deployment does not rebuild packages.
+
+## Portal approval and follow-up verification
+
+For a successful submission in an earlier promotion run, pass its numeric
+`portal_submission_run_id` to a fresh promotion dispatch with the same candidate
+identity. This skips another Portal upload. The component checks the prior run's
+repository, main branch, dispatch event and promotion workflow, requires its
+`publish-portal` job to have succeeded, and downloads its retained promotion-input
+artifact to compare the candidate manifest's exact SHA-256. A public 400 alone is
+not proof of submission. Keep those Actions artifacts until recovery completes.
+
+For the existing `0.1.1` submission in run `44257086003`, after merging the corrected
+workflow and separately authorizing publication:
+
+```sh
+gh workflow run release-promote.yml --repo buildish-tooling/buildish-atr-maven-bundle \
+  --ref main -f version=0.1.1 -f candidate_tag=v0.1.1-rc1 \
+  -f candidate_manifest_digest=57c6b519e65ed75cd2618387b30800101a9dbc3f0e5a935c8e9087f3fcead112 \
+  -f portal_submission_run_id=44257086003
+```
+
+Confirm the candidate digest against the retained approval record. Central is
+rechecked and its matching upload skipped. No candidate rebuild is required.
+
+After Gradle approval, separately authorize the read-only follow-up below, using
+the sealed manifest SHA-256 reported by the successful final publication:
+
+```sh
+gh workflow run release-verify-portal.yml --repo buildish-tooling/buildish-atr-maven-bundle \
+  --ref main -f version=0.1.1 -f final_manifest_digest=SEALED_MANIFEST_SHA256
+```
+
+This workflow selects the exact published final and candidate from the digest-bound
+manifest, verifies both using the pinned CLI, checks anonymous Portal registration
+and all retained primary bytes, and runs a fresh consumer. Missing/transient data
+retries within 960 seconds; conflicts fail immediately. It uses no registry secrets
+or publication permissions. On success, retain `portal-follow-up-VERSION-RUN_ID`
+and the workflow run URL as later evidence. The immutable release's original
+pending record remains a truthful historical snapshot. No assets are added to it.
+If approval is still pending, retry this workflow later with the same inputs.
 
 ## Partial failure and recovery
 
@@ -262,15 +306,15 @@ packages and cannot turn a failed package release into success.
 | --- | --- |
 | Transient failure before a mutation | Rerun failed jobs using the retained run inputs. Candidate resolution is not rerun just to obtain another RC. |
 | Central upload accepted, response lost or visibility delayed | Inspect the Central Portal deployment first. Preserve its deployment ID/ZIP digest and finish that deployment; do not blindly upload again. Rerun verification with retained candidate inputs. |
-| Central/Portal matching partial public files | No replacement upload is attempted. Readback retries missing/transient files and fails on conflicts. If propagation cannot complete, inspect the existing deployment/Portal approval and complete it through its normal approved process, then rerun. |
-| Registry files complete, upload skipped | Verification, consumer tests and finalization must still execute. |
-| Central complete, Portal inspection fails with HTTP 400 | The Portal returns a specific “Plugin Not Found” HTML page with status 400 for an unpublished version. The corrected inspector treats that exact response as absent, while rejecting unrelated 400s. After deploying the workflow fix, freshly dispatch promotion with the same approved candidate tag/digest; Central upload is skipped after matching readback. No rebuild or new candidate is needed for this inspection-only correction. |
-| Portal rejects/rewrites candidate POM or module bytes | Stop. Retain the candidate and any draft and establish the precise publication contract. A successful Central upload does not qualify the Portal path. |
+| Matching partial public files | Never replace existing files. Central must finish readback before release. For Portal, retain successful submission proof and complete public verification separately after approval; conflicts still fail. |
+| Matching uploads skipped | Central verification, accepted Portal submission evidence and finalization must still execute. Public Portal consumer verification is the separate follow-up. |
+| Portal submitted but public page returns not found | Supply the previous successful submission run ID to a fresh promotion of the same candidate. Record public verification as pending and follow up after approval; do not submit again. |
+| Portal rejects submission or preflight finds rewritten bytes | Stop promotion and retain evidence. If a mismatch is first discovered by follow-up after final publication, record that failure and preserve the locked release; do not claim Portal verification succeeded. |
 | Changed source, notes or signatures | New candidate. If registry bytes at that version already exist, choose a new version; increasing only RC cannot replace them. |
 | Sealed draft, final publication failed | Rerun finalization with the retained sealed-manifest digest. A complete fresh promotion may reuse the same candidate and sealed bytes. |
 | Published immutable GitHub release | Revalidate matching state without uploads. Never clobber, delete/recreate or unlock it to bypass a conflict. If required evidence is missing, preserve records and document the incomplete release. |
 | Workflow fix required | Fresh dispatch on the new workflow revision, retaining approved candidate tag/digest when payload and contract are unchanged. Retrying old jobs uses the old workflow. |
-| Cancellation or failed verification | Publication remains blocked. Inspect partial remote state before resuming the same identity. |
+| Cancellation, failed Central verification or missing submission proof | Final publication remains blocked. Inspect partial remote state before resuming the same identity. |
 
 For upload recovery, prefer a fresh promotion dispatch with the same exact
 candidate tag/digest so the public preflights run again. Retrying only a failed
@@ -278,28 +322,15 @@ upload job retains its earlier upstream inspection result; inspect an uncertain
 Central deployment before doing so. Read-only status polling can resume from the
 retained deployment receipt without submitting another upload.
 
-For run `44253747978`, Central publication and verification passed for `0.1.1`;
-the failure was Portal inspection of its unpublished version page. After the
-inspection correction is merged to main, the operator can freshly dispatch the
-same candidate below, confirming the digest against the retained approval record.
-This skips a matching Central upload and attempts the remaining Portal/GitHub
-publication phases; it does not rebuild the candidate or replace Central files.
-
-```sh
-gh workflow run release-promote.yml --repo buildish-tooling/buildish-atr-maven-bundle \
-  --ref main -f version=0.1.1 -f candidate_tag=v0.1.1-rc1 \
-  -f candidate_manifest_digest=57c6b519e65ed75cd2618387b30800101a9dbc3f0e5a935c8e9087f3fcead112
-```
-
-The command is an operator action requiring its own authorization. Rerunning old
-jobs would retain the old inspector.
-
 Workflow artifacts retain transport/verification state for 90 days. Preserve needed
 inputs before expiry. A fresh promotion can reacquire the immutable candidate;
 it must not infer approval from whichever candidate is newest. No automatic deletion,
 yank, candidate replacement, force-tagging, or registry rollback is performed.
 
-## Recover the failed 0.1.0 Central validation attempt
+## Historical failed 0.1.0 Central validation attempt
+
+The active release is `0.1.1`, using the recovery commands above. The following
+constraints document the older attempt; do not resume it implicitly.
 
 Run `44139922783` submitted the original `v0.1.0-rc1` ZIP. It lacked MD5/SHA-1
 sidecars and its SHA-256/SHA-512 sidecars used sum-tool text instead of Maven's

@@ -25,9 +25,17 @@ Use **Gradle 9.1+** and **Java 17+** in the build consuming this plugin.
 ## Apply the settings plugin
 
 In `settings.gradle.kts`, choose a plugin version available from your configured
-plugin repositories. Replace `<version>` with that version:
+plugin repositories. Maven Central is the primary distribution; configure it to
+resolve releases even while Plugin Portal approval is pending. Replace `<version>`
+with the selected version:
 
 ```kotlin
+pluginManagement {
+    repositories {
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
 plugins {
     id("org.buildish.atr-maven-bundle.gradle-plugin") version "<version>"
 }
@@ -37,6 +45,12 @@ rootProject.name = "my-library"
 For Groovy settings, use `settings.gradle`:
 
 ```groovy
+pluginManagement {
+    repositories {
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
 plugins {
     id 'org.buildish.atr-maven-bundle.gradle-plugin' version '<version>'
 }

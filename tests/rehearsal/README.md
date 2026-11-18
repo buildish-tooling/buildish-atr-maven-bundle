@@ -81,6 +81,10 @@ The explicit test-only adaptations are:
   the Portal fixture, including a registration marker and Central parent-POM view.
   Missing version pages use the observed HTTP 400 “Plugin Not Found” HTML response;
   Maven URLs still use 404 for absent files.
+- A `pending_portal` fixture policy hides the submitted version's public page.
+  Promotion records successful submission and pending public verification, then
+  finalizes GitHub. The separate follow-up workflow must fail before approval and
+  pass afterward without registry uploads or changes to the locked release.
 - Gradle consumers resolve those fixture registry trees through `file://` URLs.
   These are real plugin consumers, while HTTP transport/Portal admission remain
   service fixtures. Post-upload polling budgets are shortened for injected failures.
@@ -103,6 +107,15 @@ verification blocking GitHub staging/publication, recovery from that interruptio
 registry bytes that block publication. Recovery of a previously sealed release must retain its sealed-manifest digest.
 Every recovery case must perform no registry uploads. Fixture `events.jsonl` records HTTP reads,
 uploads and partial observations; per-case JSON records actual job execution.
+
+The Central-primary driver initially leaves Portal approval pending. Its
+`follow-up-pending` and `follow-up-approved` cases execute the actual read-only
+`release-verify-portal.yml`, selected by the sealed final-manifest digest. The
+mandatory failed-verification case now targets Central; Portal public verification
+is intentionally a follow-up rather than a final-publication gate. Submission
+failure, cancellation, wrong-candidate prior runs and missing proof have separate
+workflow-policy and helper regressions. Historical matrices below used the earlier
+contract requiring public Portal verification before final publication.
 
 The output retains scenario YAML, frozen workflow copies, installed-package job
 logs, fake GitHub state, registry state, transport artifacts and reports. Fixture
@@ -163,3 +176,14 @@ later publication. The separate Central rejection case failed `publish-central`,
 retained the failed receipt, and exposed no staged files publicly. These reports
 record installed wheel version `0.1.4` and its Python 3.14 `site-packages` origin.
 They do not establish live registry admission or hosted Actions skip behavior.
+
+On 2026-11-18, the Central-primary actual-workflow run passed all nine promotion
+jobs while Portal approval remained pending, rejected public verification before
+approval, passed it afterward, and recovered the locked release with both uploads
+skipped. Evidence: `build/central-primary-rehearsal/results.json`. The follow-up
+artifact contains all six verified Portal primaries and a successful consumer log.
+Follow-up and recovery performed zero registry or GitHub Release asset uploads and
+preserved sealed SHA-256
+`446808fb55aeb67b1a74b02273d4578de23b93f84e70e42f5fd63e0dc4114712`.
+The installed package version/origin was checked in every actual job. The maintained
+follow-up audit also rechecked the retained reports without rerunning workflows.

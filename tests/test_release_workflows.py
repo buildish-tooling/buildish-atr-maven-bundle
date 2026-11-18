@@ -465,6 +465,18 @@ def test_release_job_permissions_source_and_status_policy():
         assert "'skipped'" in verify["if"]
         assert "'success'" in verify["if"]
     final = promotion["jobs"]["publish"]
+    assert (
+        "inputs.portal_submission_run_id == ''"
+        in promotion["jobs"]["publish-portal"]["if"]
+    )
+    submission_job = promotion["jobs"]["verify-portal"]
+    assert submission_job["permissions"] == {"contents": "read", "actions": "read"}
+    submission_scripts = "\n".join(
+        step.get("run", "") for step in submission_job["steps"]
+    )
+    assert "registries.py record-portal" in submission_scripts
+    assert "registries.py verify portal" not in submission_scripts
+    assert "consume.sh" not in submission_scripts
     central = promotion["jobs"]["publish-central"]
     central_commands = "\n".join(step.get("run", "") for step in central["steps"])
     assert central_commands.index(
@@ -744,3 +756,236 @@ def test_bundle_verification_checks_signatures_fingerprint_and_retained_bytes(
             check=True,
             capture_output=True,
         )
+
+
+def test_portal_submission_records_pending_stable_facts(
+    repository, tmp_path, monkeypatch
+):
+    candidate = tmp_path / "candidate.json"
+    w.write(candidate, {"release": {"version": "1.2.3"}})
+    monkeypatch.setenv("GITHUB_RUN_ID", "123")
+    first, recovered = tmp_path / "first", tmp_path / "recovered"
+    r.record_portal(repository, "1.2.3", candidate, first, "absent", "success")
+    pending = w.read(first / "readback.json")
+    assert pending["submission"] == "accepted"
+    assert pending["public_verification"] == "pending"
+    assert pending["candidate_manifest_digest"] == w.digest(candidate)
+    assert len(pending["files"]) == 6
+    with patch.object(r, "inspect", return_value="complete"):
+        r.record_portal(
+            repository, "1.2.3", candidate, recovered, "complete", "skipped"
+        )
+    assert (first / "readback.json").read_bytes() == (
+        recovered / "readback.json"
+    ).read_bytes()
+    assert w.read(first / "submission-proof.json") != w.read(
+        recovered / "submission-proof.json"
+    )
+    for outcome in ("failure", "cancelled", "skipped"):
+        with pytest.raises(ValueError, match="No successful Portal submission"):
+            r.record_portal(
+                repository, "1.2.3", candidate, recovered, "absent", outcome
+            )
+    for outcome in ("failure", "cancelled"):
+        with pytest.raises(ValueError, match="No successful Portal submission"):
+            r.record_portal(
+                repository, "1.2.3", candidate, recovered, "complete", outcome
+            )
+    with patch.object(
+        r, "previous_portal_submission", return_value={"run_id": "42"}
+    ) as prior:
+        r.record_portal(
+            repository, "1.2.3", candidate, recovered, "absent", "skipped", "42"
+        )
+        prior.assert_called_once_with("42", w.digest(candidate))
+    assert (first / "readback.json").read_bytes() == (
+        recovered / "readback.json"
+    ).read_bytes()
+    with (
+        patch.object(r, "inspect", side_effect=ValueError("conflicting Portal files")),
+        pytest.raises(ValueError, match="conflicting"),
+    ):
+        r.record_portal(
+            repository, "1.2.3", candidate, recovered, "complete", "skipped"
+        )
+
+
+@pytest.mark.parametrize(
+    "defect",
+    [
+        None,
+        "workflow",
+        "branch",
+        "repository",
+        "event",
+        "active",
+        "failed",
+        "candidate",
+    ],
+)
+def test_prior_portal_submission_requires_same_candidate_and_trusted_success(
+    tmp_path, defect
+):
+    candidate = tmp_path / "candidate.json"
+    candidate.write_text("retained candidate")
+    run = {
+        "repository": {"full_name": w.REPOSITORY},
+        "path": ".github/workflows/release-promote.yml",
+        "event": "workflow_dispatch",
+        "head_branch": "main",
+        "status": "completed",
+        "head_sha": "a" * 40,
+    }
+    jobs = [{"jobs": [{"name": "publish-portal", "conclusion": "success", "id": 15}]}]
+    for key, value in {
+        "workflow": ("path", "untrusted.yml"),
+        "branch": ("head_branch", "feature"),
+        "event": ("event", "pull_request"),
+        "active": ("status", "in_progress"),
+    }.items():
+        if defect == key:
+            run[value[0]] = value[1]
+    if defect == "repository":
+        run["repository"]["full_name"] = "another/repository"
+    if defect == "failed":
+        jobs[0]["jobs"][0]["conclusion"] = "failure"
+
+    def download(command, check):
+        assert command[:3] == ["gh", "run", "download"]
+        assert command[3] == "42"
+        target = Path(command[-1]) / "candidate-manifest.json"
+        target.write_bytes(
+            b"different candidate" if defect == "candidate" else candidate.read_bytes()
+        )
+
+    with (
+        patch.object(
+            r.subprocess,
+            "check_output",
+            side_effect=[json.dumps(run), json.dumps(jobs[0]["jobs"][0])],
+        ),
+        patch.object(r.subprocess, "run", side_effect=download),
+    ):
+        if defect:
+            with pytest.raises(ValueError):
+                r.previous_portal_submission("42", w.digest(candidate))
+        else:
+            assert r.previous_portal_submission("42", w.digest(candidate)) == {
+                "run_id": "42",
+                "job_id": 15,
+                "workflow_sha": "a" * 40,
+            }
+    with pytest.raises(ValueError, match="numeric"):
+        r.previous_portal_submission("--invalid", w.digest(candidate))
+
+
+def test_pending_manifest_evidence_does_not_claim_portal_readback(
+    repository, tmp_path, monkeypatch
+):
+    candidate = tmp_path / "candidate.json"
+    w.write(candidate, {"release": {"version": "1.2.3"}})
+    monkeypatch.setenv("GITHUB_RUN_ID", "123")
+    portal = tmp_path / "portal"
+    r.record_portal(repository, "1.2.3", candidate, portal, "absent", "success")
+    state, central, result = [
+        tmp_path / name for name in ("state.json", "central.json", "result.json")
+    ]
+    w.write(
+        state,
+        {
+            "release": {"version": "1.2.3"},
+            "candidate_manifest_digest": w.digest(candidate),
+        },
+    )
+    w.write(
+        central,
+        {
+            "target": "central",
+            "version": "1.2.3",
+            "base_url": r.BASES["central"],
+            "files": {},
+        },
+    )
+    r.evidence(state, central, portal / "readback.json", result)
+    refs = w.read(result)["verification_results"]
+    assert [ref["kind"] for ref in refs] == [
+        "atr-maven-bundle-central-readback",
+        "atr-maven-bundle-portal-submission",
+    ]
+    assert json.loads(refs[1]["claims"]["record"])["public_verification"] == "pending"
+    pending = w.read(portal / "readback.json")
+    pending["candidate_manifest_digest"] = "b" * 64
+    w.write(portal / "readback.json", pending)
+    with pytest.raises(ValueError, match="Pending Portal evidence"):
+        r.evidence(state, central, portal / "readback.json", result)
+
+
+def test_follow_up_binds_sealed_manifest_and_candidate(tmp_path, monkeypatch):
+    output = tmp_path / "outputs"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+    state = {
+        "release": {
+            "version": "1.2.3",
+            "component": {"id": "buildish-atr-maven-bundle"},
+        },
+        "source": {"commit_sha": "a" * 40},
+        "final_tag": {"name": "v1.2.3"},
+        "artifacts": [],
+        "candidate": {"tag": {"name": "v1.2.3-rc1"}},
+        "candidate_manifest_digest": "b" * 64,
+    }
+    manifest = {
+        key: state[key] for key in ("release", "source", "final_tag", "artifacts")
+    }
+    manifest.update(
+        promoted_candidate={
+            "candidate": state["candidate"],
+            "manifest": {"digest": "b" * 64},
+        },
+        verification_results=[{"kind": "atr-maven-bundle-portal-submission"}],
+    )
+    state_path, manifest_path, result = [
+        tmp_path / name for name in ("state.json", "manifest.json", "result.json")
+    ]
+    w.write(state_path, state)
+    w.write(manifest_path, manifest)
+    r.final_inputs(manifest_path, w.digest(manifest_path), "1.2.3")
+    assert "candidate_tag=v1.2.3-rc1" in output.read_text()
+    r.final_state(state_path, manifest_path, w.digest(manifest_path), result)
+    assert w.read(result)["verification_results"] == manifest["verification_results"]
+    with pytest.raises(ValueError, match="Producer digest"):
+        r.final_inputs(manifest_path, "0" * 64, "1.2.3")
+    with pytest.raises(ValueError, match="selected release"):
+        r.final_inputs(manifest_path, w.digest(manifest_path), "1.2.4")
+    state["candidate_manifest_digest"] = "c" * 64
+    w.write(state_path, state)
+    with pytest.raises(ValueError, match="retained candidate"):
+        r.final_state(state_path, manifest_path, w.digest(manifest_path), result)
+
+
+def test_follow_up_has_no_publication_permissions_or_tasks():
+    workflow = yaml.safe_load(
+        (ROOT / ".github/workflows/release-verify-portal.yml").read_text()
+    )
+    assert workflow["permissions"] == {"contents": "read"}
+    job = workflow["jobs"]["verify-portal"]
+    assert job["runs-on"] == "ubuntu-26.04"
+    assert "environment" not in job and "permissions" not in job
+    serialized = json.dumps(job)
+    assert "secrets." not in serialized
+    scripts = "\n".join(step.get("run", "") for step in job["steps"])
+    assert "verify-github-final-release" in scripts and "fetch-tag" in scripts
+    assert (
+        "registries.py final-inputs" in scripts
+        and "registries.py final-state" in scripts
+    )
+    assert "registries.py verify portal" in scripts
+    assert 'consume.sh "https://plugins.gradle.org/m2/"' in scripts
+    for forbidden in (
+        "publishPlugins",
+        "stage-github",
+        "attach-github",
+        "publish-github",
+        "upload-central",
+    ):
+        assert forbidden not in scripts

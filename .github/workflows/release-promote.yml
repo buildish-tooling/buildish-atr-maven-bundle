@@ -29,6 +29,11 @@ name: Release Promote Candidate
         description: Independently retained SHA-256 of candidate-manifest.json
         required: true
         type: string
+      portal_submission_run_id:
+        description: Previous successful Portal submission run for this candidate; skips another upload
+        required: false
+        default: ''
+        type: string
 permissions:
   contents: read
 concurrency:
@@ -317,7 +322,7 @@ jobs:
     - inspect-portal
     environment: release-candidate
     if: ${{ !cancelled() && needs.resolve.result == 'success' && needs.inspect-portal.result == 'success' && needs.inspect-portal.outputs.status
-      == 'absent' }}
+      == 'absent' && inputs.portal_submission_run_id == '' }}
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
@@ -358,13 +363,18 @@ jobs:
         RELEASE_REPOSITORY: ${{ runner.temp }}/repository
         GRADLE_PUBLISH_KEY: ${{ secrets.GRADLE_PUBLISH_KEY }}
         GRADLE_PUBLISH_SECRET: ${{ secrets.GRADLE_PUBLISH_SECRET }}
+  # Validates accepted submission; public availability is checked after approval.
   verify-portal:
+    name: Record Portal submission
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     needs:
     - resolve
     - inspect-portal
     - publish-portal
+    permissions:
+      contents: read
+      actions: read
     outputs:
       bundle_digest: ${{ steps.verify.outputs.bundle_digest }}
     if: ${{ !cancelled() && needs.resolve.result == 'success' && needs.inspect-portal.result == 'success' && (needs.publish-portal.result
@@ -377,13 +387,6 @@ jobs:
         fetch-depth: 1
     - uses: $/.github/actions/setup-release-tooling
       id: tooling
-    - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880
-      with:
-        distribution: temurin
-        java-version: |-
-          17
-          21
-        overwrite-settings: false
     - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
       with:
         name: promotion-input-${{ github.run_id }}
@@ -402,12 +405,18 @@ jobs:
         RELEASE_VERSION: ${{ inputs.version }}
     - run: |
         set -euo pipefail
-        python3 -B buildish-release-tooling/registries.py verify portal "$RUNNER_TEMP/repository" "$RELEASE_VERSION" "$RUNNER_TEMP/portal/readback.json" --attempts 91 --retry-delay 10 --total-timeout 960
-        bash buildish-release-tooling/consume.sh "https://plugins.gradle.org/m2/" "$RELEASE_VERSION" "$RUNNER_TEMP/consumer"
+        python3 -B buildish-release-tooling/registries.py record-portal \
+          "$RUNNER_TEMP/repository" "$RELEASE_VERSION" "$RUNNER_TEMP/promotion/candidate-manifest.json" \
+          "$RUNNER_TEMP/portal" "$PREFLIGHT_STATUS" "$PUBLISH_RESULT" --prior-run "$PRIOR_RUN"
+        printf 'Portal submission accepted; public verification pending. Run release-verify-portal.yml after approval.\n' >> "$GITHUB_STEP_SUMMARY"
         python3 -B buildish-release-tooling/workflow.py seal "$RUNNER_TEMP/portal"
       env:
         BUILDISH_RELEASE_TOOLING_PYTHON: ${{ steps.tooling.outputs.python }}
         RELEASE_VERSION: ${{ inputs.version }}
+        PREFLIGHT_STATUS: ${{ needs.inspect-portal.outputs.status }}
+        PUBLISH_RESULT: ${{ needs.publish-portal.result }}
+        PRIOR_RUN: ${{ inputs.portal_submission_run_id }}
+        GH_TOKEN: ${{ github.token }}
       id: verify
     - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
@@ -485,7 +494,7 @@ jobs:
         digest="$(sha256sum "$manifest" | cut -d' ' -f1)"
         MANIFEST_PATH="$RUNNER_TEMP/sealed/publication.json" bash buildish-release-tooling/release-tooling.sh publish-github-final-release --release-state "$state" --require-manifest-digest "$digest"
         MANIFEST_PATH="$RUNNER_TEMP/sealed/verification.json" bash buildish-release-tooling/release-tooling.sh verify-github-final-release --release-state "$state"
-        printf 'Final: v%s; sealed manifest SHA-256: %s\n' "$RELEASE_VERSION" "$digest" >> "$GITHUB_STEP_SUMMARY"
+        printf 'Final: v%s; sealed manifest SHA-256: %s; Portal public verification pending\n' "$RELEASE_VERSION" "$digest" >> "$GITHUB_STEP_SUMMARY"
       env:
         BUILDISH_RELEASE_TOOLING_PYTHON: ${{ steps.tooling.outputs.python }}
         RELEASE_VERSION: ${{ inputs.version }}
