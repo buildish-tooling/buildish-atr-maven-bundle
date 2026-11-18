@@ -1,11 +1,76 @@
 {
   "schemaVersion": 1,
-  "providers": [],
-  "records": [],
+  "providers": [
+    {
+      "key": "atr-maven-bundle-tags",
+      "type": "git-tags",
+      "displayName": "ATR Maven Bundle Git tags",
+      "baseUrl": "https://github.com/buildish-tooling/buildish-atr-maven-bundle",
+      "fetchedAt": "2026-11-18T08:39:57.103140+00:00"
+    }
+  ],
+  "records": [
+    {
+      "provider": "atr-maven-bundle-tags",
+      "kind": "released",
+      "componentSlug": "atr-maven-bundle",
+      "artifactKey": "atr-maven-bundle",
+      "version": "0.1.0",
+      "tag": "v0.1.0",
+      "commitSha": "0c37378301845806620140102d0b32e009d055d4",
+      "docsSource": {
+        "repository": "https://github.com/buildish-tooling/buildish-atr-maven-bundle",
+        "root": "docs",
+        "ref": "0c37378301845806620140102d0b32e009d055d4"
+      },
+      "externalId": "git:buildish-atr-maven-bundle:v0.1.0",
+      "externalUrl": "https://github.com/buildish-tooling/buildish-atr-maven-bundle/releases/tag/v0.1.0",
+      "releaseLine": "0.1",
+      "publicationState": "hidden"
+    },
+    {
+      "provider": "atr-maven-bundle-tags",
+      "kind": "released",
+      "componentSlug": "atr-maven-bundle",
+      "artifactKey": "atr-maven-bundle",
+      "version": "0.1.1",
+      "tag": "v0.1.1",
+      "commitSha": "38962f49da2a3aed57004051058f4fa138346638",
+      "docsSource": {
+        "repository": "https://github.com/buildish-tooling/buildish-atr-maven-bundle",
+        "root": "docs",
+        "ref": "38962f49da2a3aed57004051058f4fa138346638"
+      },
+      "externalId": "git:buildish-atr-maven-bundle:v0.1.1",
+      "externalUrl": "https://github.com/buildish-tooling/buildish-atr-maven-bundle/releases/tag/v0.1.1",
+      "releaseLine": "0.1",
+      "publicationState": "published",
+      "publishedAt": "2026-11-18T08:36:34Z"
+    }
+  ],
   "artifacts": [
     {
       "componentSlug": "atr-maven-bundle",
-      "artifactKey": "atr-maven-bundle"
+      "artifactKey": "atr-maven-bundle",
+      "latestStable": "0.1.1",
+      "releaseLines": [
+        {
+          "key": "0.1",
+          "latest": "0.1.1"
+        }
+      ],
+      "releases": [
+        {
+          "version": "0.1.0",
+          "releaseLine": "0.1",
+          "publicationState": "hidden"
+        },
+        {
+          "version": "0.1.1",
+          "releaseLine": "0.1",
+          "publicationState": "published"
+        }
+      ]
     }
   ]
 }
