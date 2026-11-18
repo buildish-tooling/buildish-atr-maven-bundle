@@ -180,6 +180,16 @@ def urlopen(request, timeout=None, **kwargs):
         record("partial-preflight", target=target)
         raise urllib.error.HTTPError(url, 404, "fixture propagation", {}, None)
     if not path.is_file():
+        if target == "portal" and parsed.path.startswith("/plugin/"):
+            _, _, plugin_id, version = parsed.path.split("/")
+            body = (
+                '<html><head><title>Gradle - Plugin Not Found</title></head>'
+                f'<body><h1>Version &quot;{version}&quot; of plugin '
+                f'&quot;{plugin_id}&quot; not found</h1></body></html>'
+            ).encode()
+            raise urllib.error.HTTPError(
+                url, 400, "Bad Request", {}, io.BytesIO(body)
+            )
         raise urllib.error.HTTPError(url, 404, "fixture not published", {}, None)
     data = path.read_bytes()
     if policy.get("conflict") == target and parsed.path.endswith(".jar"):

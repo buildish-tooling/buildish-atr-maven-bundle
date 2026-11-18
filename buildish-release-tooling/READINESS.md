@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 -->
 
-# Release readiness — 2026-11-17
+# Release readiness — 2026-11-18
 
 Central rejected the first `0.1.0` candidate's Maven bundle. The local correction
 uses ATR Maven Bundle for signing, checksums and ZIP creation, removes NMCP, and
@@ -22,6 +22,15 @@ keeps a bounded Python Central client. No replacement candidate, key upload,
 workflow dispatch or remote publication was performed by this correction.
 See [contract](RELEASE-CONTRACT.md), [operator guide](RELEASE-PROCESS.md) and
 [docs maintenance](../tools/versioned-docs/README.md).
+
+Latest live attempt: promotion run `44253747978` for `v0.1.1-rc1` passed Central
+publication (`PUBLISHED`) and exact-byte/consumer verification, then stopped at
+`inspect-portal`. The Portal's unpublished-version page returned HTTP 400 instead
+of 404. The local correction recognizes only that exact not-found page and keeps
+other 400s fatal. Deploy it and freshly dispatch promotion with the same approved
+candidate tag/digest; Central's immutable files must be reused. Portal publication
+and final GitHub publication have not completed in that run. Earlier `0.1.0`
+recovery notes below remain historical; the active publication version is `0.1.1`.
 
 ## Composition and baselines
 
@@ -56,6 +65,11 @@ See [contract](RELEASE-CONTRACT.md), [operator guide](RELEASE-PROCESS.md) and
 
 ## Validation evidence
 
+- [x] Portal HTTP 400 correction: 57 Python tests and 23 subtests, repository
+  `check` and changed-file lint passed. Read-only inspection of the real
+  `v0.1.1-rc1` bundle, verified against the run's candidate-manifest digest,
+  returned Central `complete` and Portal `absent`. Evidence:
+  `build/portal-inspection-0.1.1/readback.json`. No live mutation was performed.
 - [x] Repository `check`: Gradle 9.9.1 / JDK 21, Java 17/21 consumer compatibility,
   functional/unit/build-logic tests, formatting, RAT and docs helpers passed after
   NMCP removal. Earlier 9.8.2 runs covered docs worktree presence/absence.

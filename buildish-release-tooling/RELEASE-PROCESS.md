@@ -264,6 +264,7 @@ packages and cannot turn a failed package release into success.
 | Central upload accepted, response lost or visibility delayed | Inspect the Central Portal deployment first. Preserve its deployment ID/ZIP digest and finish that deployment; do not blindly upload again. Rerun verification with retained candidate inputs. |
 | Central/Portal matching partial public files | No replacement upload is attempted. Readback retries missing/transient files and fails on conflicts. If propagation cannot complete, inspect the existing deployment/Portal approval and complete it through its normal approved process, then rerun. |
 | Registry files complete, upload skipped | Verification, consumer tests and finalization must still execute. |
+| Central complete, Portal inspection fails with HTTP 400 | The Portal returns a specific “Plugin Not Found” HTML page with status 400 for an unpublished version. The corrected inspector treats that exact response as absent, while rejecting unrelated 400s. After deploying the workflow fix, freshly dispatch promotion with the same approved candidate tag/digest; Central upload is skipped after matching readback. No rebuild or new candidate is needed for this inspection-only correction. |
 | Portal rejects/rewrites candidate POM or module bytes | Stop. Retain the candidate and any draft and establish the precise publication contract. A successful Central upload does not qualify the Portal path. |
 | Changed source, notes or signatures | New candidate. If registry bytes at that version already exist, choose a new version; increasing only RC cannot replace them. |
 | Sealed draft, final publication failed | Rerun finalization with the retained sealed-manifest digest. A complete fresh promotion may reuse the same candidate and sealed bytes. |
@@ -276,6 +277,22 @@ candidate tag/digest so the public preflights run again. Retrying only a failed
 upload job retains its earlier upstream inspection result; inspect an uncertain
 Central deployment before doing so. Read-only status polling can resume from the
 retained deployment receipt without submitting another upload.
+
+For run `44253747978`, Central publication and verification passed for `0.1.1`;
+the failure was Portal inspection of its unpublished version page. After the
+inspection correction is merged to main, the operator can freshly dispatch the
+same candidate below, confirming the digest against the retained approval record.
+This skips a matching Central upload and attempts the remaining Portal/GitHub
+publication phases; it does not rebuild the candidate or replace Central files.
+
+```sh
+gh workflow run release-promote.yml --repo buildish-tooling/buildish-atr-maven-bundle \
+  --ref main -f version=0.1.1 -f candidate_tag=v0.1.1-rc1 \
+  -f candidate_manifest_digest=57c6b519e65ed75cd2618387b30800101a9dbc3f0e5a935c8e9087f3fcead112
+```
+
+The command is an operator action requiring its own authorization. Rerunning old
+jobs would retain the old inspector.
 
 Workflow artifacts retain transport/verification state for 90 days. Preserve needed
 inputs before expiry. A fresh promotion can reacquire the immutable candidate;

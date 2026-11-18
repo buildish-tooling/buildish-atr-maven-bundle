@@ -112,6 +112,18 @@ def test_central_admission_rejects_the_original_checksum_contract():
     }
 
 
+def test_portal_fixture_matches_live_unpublished_version_response(tmp_path, monkeypatch):
+    monkeypatch.setenv(fixture.ROOT_ENV, str(tmp_path))
+    url = "https://plugins.gradle.org/plugin/org.buildish.atr-maven-bundle.gradle-plugin/1.2.3"
+    with pytest.raises(urllib.error.HTTPError) as error:
+        fixture.urlopen(url)
+    assert error.value.code == 400
+    body = error.value.read().decode()
+    assert "<title>Gradle - Plugin Not Found</title>" in body
+    assert 'Version &quot;1.2.3&quot; of plugin' in body
+    assert "org.buildish.atr-maven-bundle.gradle-plugin" in body
+
+
 def test_accepted_upload_then_failed_validation_fails_the_real_client(tmp_path):
     archive = tmp_path / "rejected.zip"
     data, name = b"approved bytes", "org/example/1.2.3/plugin.jar"

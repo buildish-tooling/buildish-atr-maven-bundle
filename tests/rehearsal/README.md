@@ -79,6 +79,8 @@ The explicit test-only adaptations are:
 - The trusted Portal publisher executes its ordinary local Maven publication task
   instead of its remote upload task. Its exact POM, module and JAR outputs populate
   the Portal fixture, including a registration marker and Central parent-POM view.
+  Missing version pages use the observed HTTP 400 “Plugin Not Found” HTML response;
+  Maven URLs still use 404 for absent files.
 - Gradle consumers resolve those fixture registry trees through `file://` URLs.
   These are real plugin consumers, while HTTP transport/Portal admission remain
   service fixtures. Post-upload polling budgets are shortened for injected failures.

@@ -25,6 +25,7 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+from html import unescape
 from http.client import IncompleteRead
 from pathlib import Path
 from urllib.parse import urlencode
@@ -69,7 +70,17 @@ def inspect(repository, version, target, fetch=None, deadline=None):
                     )
                 response.read()
         except urllib.error.HTTPError as error:
-            if error.code != 404:
+            # The Portal uses HTTP 400 for an unpublished plugin/version page.
+            # Do not mistake other bad requests for permission to publish.
+            absent = error.code == 404
+            if error.code == 400:
+                body = unescape(error.read().decode("utf-8", errors="replace"))
+                absent = (
+                    "<title>Gradle - Plugin Not Found</title>" in body
+                    and f'<h1>Version "{version}" of plugin "{PLUGIN}" not found</h1>'
+                    in body
+                )
+            if not absent:
                 if error.code in (408, 429) or error.code >= 500:
                     raise ConnectionError(
                         f"Transient Portal registration HTTP {error.code}"

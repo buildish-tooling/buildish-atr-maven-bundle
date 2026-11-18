@@ -142,6 +142,42 @@ def test_poll_missing_transient_but_never_conflict(repository, tmp_path):
         r.verify(repository, "1.2.3", "central", result, attempts=1)
 
 
+@pytest.mark.parametrize(
+    ("page_version", "plugin", "title", "absent"),
+    [
+        ("1.2.3", w.PLUGIN, "Gradle - Plugin Not Found", True),
+        ("1.2.4", w.PLUGIN, "Gradle - Plugin Not Found", False),
+        ("1.2.3", "another.plugin", "Gradle - Plugin Not Found", False),
+        ("1.2.3", w.PLUGIN, "Bad Request", False),
+    ],
+)
+def test_portal_missing_version_http_400_is_specific(
+    repository, page_version, plugin, title, absent
+):
+    fallback = fetcher(repository)
+
+    def fetch(url, timeout):
+        if "/plugin/" in url:
+            body = (
+                f"<title>{title}</title>"
+                f"<h1>Version &quot;{page_version}&quot; of plugin "
+                f"&quot;{plugin}&quot; not found</h1>"
+            ).encode()
+            raise urllib.error.HTTPError(url, 400, "Bad Request", {}, response(body))
+        return fallback(url, timeout)
+
+    if absent:
+        # All Maven URLs may already resolve through Central fallback.
+        assert r.inspect(repository, "1.2.3", "portal", fetch) == "absent"
+        conflicting = min(r.expected_files(repository, "1.2.3", "portal"))
+        fallback = fetcher(repository, corrupt=[conflicting])
+        with pytest.raises(ValueError, match="Conflicting portal"):
+            r.inspect(repository, "1.2.3", "portal", fetch)
+    else:
+        with pytest.raises(ValueError, match="registration HTTP 400"):
+            r.inspect(repository, "1.2.3", "portal", fetch)
+
+
 def test_central_upload_retains_receipt_without_retrying_uncertain_failure(
     tmp_path, monkeypatch
 ):
