@@ -296,11 +296,12 @@ candidate manifest used for promotion. For the published `0.1.1` release, the
 producer artifact, GitHub asset digest and downloaded bytes all agree on
 `b4c5a5e5af8ed4973187346088cf8de8ea267d4f615dd62c44ff534dd09c1801`.
 Run `44282532213` used the candidate digest and correctly stopped before Portal
-verification. Freshly dispatch this workflow after deploying the marker-readback
-correction; rerunning the old jobs retains the old exact-byte marker check.
+verification. The later marker-readback correction handles the Portal-generated
+marker POM; the final-only correction below removes the RC dependency.
 
-This workflow selects the exact published final and candidate from the digest-bound
-manifest, verifies both using the pinned CLI, checks anonymous Portal registration
+This workflow uses only the published final release, its digest-bound manifest and
+its immutable Git tag. It downloads the four final assets and validates their
+hashes/sizes, then checks anonymous Portal registration
 and the five retained implementation files byte-for-byte, validates the Portal's
 regenerated marker using the narrow mapping rule in the release contract, and runs
 a fresh consumer. The marker's observed and retained hashes/sizes are recorded
@@ -310,6 +311,20 @@ or publication permissions. On success, retain `portal-follow-up-VERSION-RUN_ID`
 and the workflow run URL as later evidence. The immutable release's original
 pending record remains a truthful historical snapshot. No assets are added to it.
 If approval is still pending, retry this workflow later with the same inputs.
+
+The RC release, RC assets and RC tag are not read by this post-release workflow.
+Historical candidate identity and digest come from the sealed final manifest.
+The helper reconstructs the public 0.1.4 `PromotionState` file contract so the
+released CLI can verify the final publication; its required source timestamp is
+recovered from the fetched final source commit using the same Git committer-time
+policy as `resolve-candidate`. No source is rebuilt or checked out. Promotion
+itself still needs its exact approved candidate until final publication completes.
+
+Run `44284876726` exposed the former RC dependency after the RC GitHub Release was
+removed. After merging this correction, freshly dispatch the follow-up with the
+same `0.1.1` version and final-manifest digest above. No RC recreation, new candidate
+or republication is needed. Retrying old jobs retains the old workflow revision.
+
 
 ## Partial failure and recovery
 

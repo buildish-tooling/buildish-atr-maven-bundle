@@ -30,11 +30,12 @@ correct sealed digest is
 `b4c5a5e5af8ed4973187346088cf8de8ea267d4f615dd62c44ff534dd09c1801`,
 verified against both the producer artifact and the published manifest.
 
-A live read-only check found the five implementation files byte-identical, while
-the Portal regenerated the marker POM with the same coordinates/dependency and
-omitted descriptive metadata/parent. The local correction validates only that
-specific mapping and records both observed/retained hashes. No package, release,
-tag or committed docs snapshot was changed, and no workflow was dispatched.
+The marker-mapping correction passed live anonymous readback and a real Portal
+consumer. Run `44284876726` then exposed an unnecessary follow-up dependency on
+the removed RC Release. The local correction now uses only the pinned final
+manifest, final assets and exact final Git tag. Historical promotion identity comes
+from the final manifest. No RC restoration or republication is needed, and no
+workflow has been dispatched by this change.
 
 ## Composition and baselines
 
@@ -71,6 +72,12 @@ tag or committed docs snapshot was changed, and no workflow was dispatched.
 
 ## Validation evidence
 
+- [x] Final-only follow-up: 92 Python tests and 23 subtests passed. The installed
+  0.1.4 CLI verified the real final release with its RC Release absent. Its fixture
+  regression removed both RC release and tag, while an actual `gh act` follow-up
+  removed RC release/assets and passed with zero publication uploads. Evidence:
+  `build/final-only-portal/` and `build/final-only-portal-rehearsal/results.json`.
+  Final downloads enforce manifest hashes, sizes and the exact four-file inventory.
 - [x] Approved Portal correction: 87 Python tests and 23 subtests, repository
   `check` and lint passed. Live anonymous readback verified five exact files plus
   the regenerated marker mapping, and a real `0.1.1` Portal consumer succeeded.
@@ -158,7 +165,7 @@ tag or committed docs snapshot was changed, and no workflow was dispatched.
   during this change.
 - [x] Central and Portal submission succeeded, and final `0.1.1` publication
   completed in run `44268075229`. No promotion rerun or new candidate is needed.
-- [ ] Merge the marker-readback correction with successful CI, then freshly
+- [ ] Merge the final-only follow-up correction with successful CI, then freshly
   dispatch `release-verify-portal.yml` for `0.1.1` using the sealed digest above.
   Retain the follow-up evidence; do not change the locked pending snapshot.
 - [ ] Preserve the historical `0.1.0` tag/candidate and record their incomplete

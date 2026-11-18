@@ -80,7 +80,7 @@ call verify-github-final-release --release-state promotion.json
 # A new dispatch resolves fresh state without the previous readback records.
 MANIFEST_PATH="$PWD/fresh.json" call resolve-promotion --candidate-tag v1.2.3-rc1 --candidate-manifest candidate-manifest.json --candidate-manifest-digest "$candidate_digest" 1.2.3
 # Follow-up verification restores sealed evidence without rewriting the final manifest.
-GITHUB_OUTPUT="$PWD/followup.outputs" python3 buildish-release-tooling/registries.py final-state fresh.json release-manifest-v1.json "$sealed" followup.json
+python3 buildish-release-tooling/registries.py final-state release-manifest-v1.json "$sealed" 1.2.3 followup.json
 call verify-github-final-release --release-state followup.json
 # 0.1.4 cannot restage custom sealed verification records against that bare state.
 if call stage-github-final-release --release-state fresh.json --asset maven.zip; then exit 43; fi
@@ -103,6 +103,11 @@ git -c core.hooksPath=/dev/null -c commit.gpgsign=false commit -m 'Trusted workf
 MANIFEST_PATH="$PWD/rc2.json" call resolve-candidate 1.2.3 "$approved_source"
 python3 -c 'import json; p=json.load(open("rc2.json")); assert p["candidate"]["tag"]["name"] == "v1.2.3-rc2"; assert p["source"]["commit_sha"] == p["final_tag_identity"]["target_commit"]'
 test "$(git rev-parse 'v1.2.3^{commit}')" = "$approved_source"
+# RC retention is not a prerequisite for verifying a completed final release.
+python3 -c 'import json; p=".buildish-release-harness/shim-state.json"; s=json.load(open(p)); del s["gh_releases"]["v1.2.3-rc1"]; json.dump(s,open(p,"w"))'
+git tag -d v1.2.3-rc1
+python3 buildish-release-tooling/registries.py final-state release-manifest-v1.json "$sealed" 1.2.3 final-only.json
+call verify-github-final-release --release-state final-only.json
 """.replace("CLI_COMMAND", run)
     scenario = {
         "name": "atr-candidate-promotion-recovery",

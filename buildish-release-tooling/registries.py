@@ -39,7 +39,6 @@ from workflow import (
     REPOSITORY,
     check_digest,
     digest,
-    output,
     primary_paths,
     read,
     signed_paths,
@@ -569,28 +568,40 @@ def final_inputs(manifest_path, expected, version):
         or manifest["final_tag"]["name"] != "v" + version
     ):
         raise ValueError("Final manifest differs from selected release")
-    promoted = manifest["promoted_candidate"]
-    output("candidate_tag", promoted["candidate"]["tag"]["name"])
-    output("candidate_manifest_digest", promoted["manifest"]["digest"])
+    return manifest
 
 
-def final_state(state_path, manifest_path, expected, destination):
-    check_digest(manifest_path, expected)
-    manifest, state = read(manifest_path), read(state_path)
+def final_state(manifest_path, expected, version, destination):
+    """Build the released CLI's verification state from the sealed final only."""
+    manifest = final_inputs(manifest_path, expected, version)
     promoted = manifest["promoted_candidate"]
-    if (
-        promoted["manifest"]["digest"] != state["candidate_manifest_digest"]
-        or promoted["candidate"] != state["candidate"]
-        or any(
-            manifest[key] != state[key]
-            for key in ("release", "source", "final_tag", "artifacts")
+    state = {
+        key: manifest[key]
+        for key in (
+            "release",
+            "source",
+            "final_tag",
+            "artifacts",
+            "verification_results",
+            "publications",
         )
-    ):
-        raise ValueError("Final publication differs from retained candidate")
-    # The released CLI validates the sealed snapshot and these original references.
-    state["verification_results"] = manifest["verification_results"]
+    }
+    for key in ("release_notes", "materialization", "tooling"):
+        if key in manifest:
+            state[key] = manifest[key]
+    state["candidate"] = promoted["candidate"]
+    state["candidate_manifest_digest"] = promoted["manifest"]["digest"]
+    # PromotionState in 0.1.4 requires this field, but the final manifest omits it.
+    # Recover the same Git committer timestamp used by resolve-candidate, after
+    # fetching and validating the exact final tag; no candidate lookup is needed.
+    epoch = subprocess.check_output(
+        ["git", "show", "-s", "--format=%ct", manifest["source"]["commit_sha"]],
+        text=True,
+    ).strip()
+    if not epoch.isdigit():
+        raise ValueError("Cannot resolve the final source commit timestamp")
+    state["source_date_epoch"] = int(epoch)
     write(destination, state)
-    output("state_digest", digest(destination))
 
 
 def main():
@@ -631,7 +642,7 @@ def main():
     for name in ("manifest", "digest", "version"):
         sub.add_argument(name)
     sub = commands.add_parser("final-state")
-    for name in ("state", "manifest", "digest", "destination"):
+    for name in ("manifest", "digest", "version", "destination"):
         sub.add_argument(name)
     args = parser.parse_args()
     if args.command == "inspect":
@@ -663,7 +674,7 @@ def main():
     elif args.command == "final-inputs":
         final_inputs(args.manifest, args.digest, args.version)
     elif args.command == "final-state":
-        final_state(args.state, args.manifest, args.digest, args.destination)
+        final_state(args.manifest, args.digest, args.version, args.destination)
     else:
         evidence(*args.paths)
 

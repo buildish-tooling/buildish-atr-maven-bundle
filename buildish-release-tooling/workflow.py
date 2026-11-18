@@ -282,11 +282,23 @@ def download(manifest, expected, destination, version):
     tag = payload["candidate"]["tag"]["name"]
     if tag != os.environ["CANDIDATE_TAG"] or payload["release"]["version"] != version:
         raise ValueError("Candidate identity differs from approval")
-    assets = payload["artifacts"]
+    download_assets(payload["artifacts"], tag, destination, version)
+
+
+def download_final(manifest, expected, destination, version):
+    check_digest(manifest, expected)
+    payload = read(manifest)
+    tag = payload["final_tag"]["name"]
+    if tag != f"v{version}" or payload["release"]["version"] != version:
+        raise ValueError("Final release identity differs from selection")
+    download_assets(payload["artifacts"], tag, destination, version)
+
+
+def download_assets(assets, tag, destination, version):
     if len(assets) != len(asset_names(version)) or {
         a["logical_name"] for a in assets
     } != asset_names(version):
-        raise ValueError("Candidate assets differ from component contract")
+        raise ValueError("Release assets differ from component contract")
     Path(destination).mkdir()
     for asset in assets:
         name = asset["logical_name"]
@@ -308,7 +320,7 @@ def download(manifest, expected, destination, version):
         path = Path(destination) / name
         check_digest(path, asset["digests"]["sha256"])
         if path.stat().st_size != asset["size_bytes"]:
-            raise ValueError("Candidate asset size differs")
+            raise ValueError("Release asset size differs")
 
 
 def fetch_tag(state_path, expected):
@@ -349,6 +361,7 @@ def main():
             "verify-bundle",
             "unpack",
             "download",
+            "download-final",
             "fetch-tag",
         ),
     )
@@ -364,6 +377,7 @@ def main():
         "verify-bundle": verify_bundle,
         "unpack": unpack,
         "download": download,
+        "download-final": download_final,
         "fetch-tag": fetch_tag,
     }[args.command](*args.args)
 

@@ -133,7 +133,9 @@ Portal readback records the observed marker SHA-256/size, retained SHA-256/size,
 and mapping-rule identity; it never labels rewritten bytes as byte-identical.
 The read-only `release-verify-portal.yml` follows approval, runs the consumer, and
 records this evidence separately, bound to the sealed final-manifest digest. It
-never edits the immutable release. Other mismatches still fail; retain the release
+never edits the immutable release. It uses only the final manifest, final artifacts
+and final Git tag; the historical candidate identity is read from that sealed
+manifest, without looking up the RC release or tag. Other mismatches still fail; retain the release
 and record the discrepancy rather than rewriting published artifacts.
 
 An optional upstream improvement would add typed `maven-central` and

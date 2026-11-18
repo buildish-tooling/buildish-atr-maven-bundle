@@ -50,7 +50,6 @@ jobs:
           21
         overwrite-settings: false
     - name: Select the sealed published release
-      id: final
       run: |
         set -euo pipefail
         python3 -B buildish-release-tooling/workflow.py preflight portal-verification
@@ -63,24 +62,19 @@ jobs:
         RELEASE_VERSION: ${{ inputs.version }}
         FINAL_MANIFEST_DIGEST: ${{ inputs.final_manifest_digest }}
         GH_TOKEN: ${{ github.token }}
-    - name: Verify the retained candidate and immutable final publication
+    - name: Verify the immutable final publication and download final artifacts
       id: state
       run: |
         set -euo pipefail
-        python3 -B buildish-release-tooling/workflow.py preflight promotion
-        bash buildish-release-tooling/release-tooling.sh verify-github-candidate --candidate-tag "$CANDIDATE_TAG" --candidate-manifest-digest "$CANDIDATE_MANIFEST_DIGEST" --candidate-manifest-output "$RUNNER_TEMP/portal/candidate-manifest.json"
-        python3 -B buildish-release-tooling/workflow.py download "$RUNNER_TEMP/portal/candidate-manifest.json" "$CANDIDATE_MANIFEST_DIGEST" "$RUNNER_TEMP/assets" "$RELEASE_VERSION"
-        MANIFEST_PATH="$RUNNER_TEMP/promotion.json" bash buildish-release-tooling/release-tooling.sh resolve-promotion --candidate-tag "$CANDIDATE_TAG" --candidate-manifest "$RUNNER_TEMP/portal/candidate-manifest.json" --candidate-manifest-digest "$CANDIDATE_MANIFEST_DIGEST" "$RELEASE_VERSION"
-        python3 -B buildish-release-tooling/registries.py final-state "$RUNNER_TEMP/promotion.json" "$RUNNER_TEMP/portal/release-manifest-v1.json" "$FINAL_MANIFEST_DIGEST" "$RUNNER_TEMP/state.json"
-        digest="$(sha256sum "$RUNNER_TEMP/state.json" | cut -d' ' -f1)"
-        python3 -B buildish-release-tooling/workflow.py fetch-tag "$RUNNER_TEMP/state.json" "$digest"
+        manifest="$RUNNER_TEMP/portal/release-manifest-v1.json"
+        python3 -B buildish-release-tooling/workflow.py fetch-tag "$manifest" "$FINAL_MANIFEST_DIGEST"
+        python3 -B buildish-release-tooling/registries.py final-state "$manifest" "$FINAL_MANIFEST_DIGEST" "$RELEASE_VERSION" "$RUNNER_TEMP/state.json"
         MANIFEST_PATH="$RUNNER_TEMP/portal/github-verification.json" bash buildish-release-tooling/release-tooling.sh verify-github-final-release --release-state "$RUNNER_TEMP/state.json"
+        python3 -B buildish-release-tooling/workflow.py download-final "$manifest" "$FINAL_MANIFEST_DIGEST" "$RUNNER_TEMP/assets" "$RELEASE_VERSION"
         python3 -B buildish-release-tooling/workflow.py unpack "$RUNNER_TEMP/assets/buildish-atr-maven-bundle-$RELEASE_VERSION-maven.zip" "$RUNNER_TEMP/repository" "$RELEASE_VERSION"
       env:
         BUILDISH_RELEASE_TOOLING_PYTHON: ${{ steps.tooling.outputs.python }}
         RELEASE_VERSION: ${{ inputs.version }}
-        CANDIDATE_TAG: ${{ steps.final.outputs.candidate_tag }}
-        CANDIDATE_MANIFEST_DIGEST: ${{ steps.final.outputs.candidate_manifest_digest }}
         FINAL_MANIFEST_DIGEST: ${{ inputs.final_manifest_digest }}
         GH_TOKEN: ${{ github.token }}
     - name: Verify anonymous Portal availability and consumer use

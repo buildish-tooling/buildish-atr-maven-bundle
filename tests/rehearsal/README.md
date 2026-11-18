@@ -196,3 +196,12 @@ actual consumer and zero registry/Release asset uploads. Its retained report is
 `build/portal-marker-rehearsal/results.json`. The independent live read-only
 `0.1.1` probe and consumer passed as well; these did not dispatch a GitHub workflow.
 Earlier fixtures copied marker bytes and therefore missed the service rewrite.
+
+The final-only follow-up rehearsal in
+`build/final-only-portal-rehearsal/results.json` removes the RC release and its assets
+from a disposable seeded service state, then executes the actual follow-up against
+the retained final. It must download final assets only, preserve the final manifest,
+and perform no registry or Release uploads. A separate installed-wheel regression
+also removes the RC Git tag. This catches a dependency the earlier retained-RC
+fixtures could not expose. The live final-release read-only check passed with the
+real RC Release already absent; no GitHub workflow was dispatched.

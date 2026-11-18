@@ -920,10 +920,8 @@ def test_pending_manifest_evidence_does_not_claim_portal_readback(
         r.evidence(state, central, portal / "readback.json", result)
 
 
-def test_follow_up_binds_sealed_manifest_and_candidate(tmp_path, monkeypatch):
-    output = tmp_path / "outputs"
-    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
-    state = {
+def test_follow_up_uses_only_sealed_final_and_source_commit(tmp_path):
+    manifest = {
         "release": {
             "version": "1.2.3",
             "component": {"id": "buildish-atr-maven-bundle"},
@@ -931,36 +929,37 @@ def test_follow_up_binds_sealed_manifest_and_candidate(tmp_path, monkeypatch):
         "source": {"commit_sha": "a" * 40},
         "final_tag": {"name": "v1.2.3"},
         "artifacts": [],
-        "candidate": {"tag": {"name": "v1.2.3-rc1"}},
-        "candidate_manifest_digest": "b" * 64,
-    }
-    manifest = {
-        key: state[key] for key in ("release", "source", "final_tag", "artifacts")
-    }
-    manifest.update(
-        promoted_candidate={
-            "candidate": state["candidate"],
+        "publications": [],
+        "tooling": {},
+        "verification_results": [{"kind": "atr-maven-bundle-portal-submission"}],
+        "promoted_candidate": {
+            "candidate": {"tag": {"name": "v1.2.3-rc1"}},
             "manifest": {"digest": "b" * 64},
         },
-        verification_results=[{"kind": "atr-maven-bundle-portal-submission"}],
+    }
+    path, result = tmp_path / "manifest.json", tmp_path / "state.json"
+    w.write(path, manifest)
+    assert r.final_inputs(path, w.digest(path), "1.2.3") == manifest
+    with patch.object(r.subprocess, "check_output", return_value="1700000000\n") as git:
+        r.final_state(path, w.digest(path), "1.2.3", result)
+    git.assert_called_once_with(
+        ["git", "show", "-s", "--format=%ct", "a" * 40], text=True
     )
-    state_path, manifest_path, result = [
-        tmp_path / name for name in ("state.json", "manifest.json", "result.json")
-    ]
-    w.write(state_path, state)
-    w.write(manifest_path, manifest)
-    r.final_inputs(manifest_path, w.digest(manifest_path), "1.2.3")
-    assert "candidate_tag=v1.2.3-rc1" in output.read_text()
-    r.final_state(state_path, manifest_path, w.digest(manifest_path), result)
-    assert w.read(result)["verification_results"] == manifest["verification_results"]
+    state = w.read(result)
+    assert state["candidate"] == manifest["promoted_candidate"]["candidate"]
+    assert state["candidate_manifest_digest"] == "b" * 64
+    assert state["source_date_epoch"] == 1700000000
+    assert state["verification_results"] == manifest["verification_results"]
+    assert state["artifacts"] == manifest["artifacts"]
     with pytest.raises(ValueError, match="Producer digest"):
-        r.final_inputs(manifest_path, "0" * 64, "1.2.3")
+        r.final_state(path, "0" * 64, "1.2.3", result)
     with pytest.raises(ValueError, match="selected release"):
-        r.final_inputs(manifest_path, w.digest(manifest_path), "1.2.4")
-    state["candidate_manifest_digest"] = "c" * 64
-    w.write(state_path, state)
-    with pytest.raises(ValueError, match="retained candidate"):
-        r.final_state(state_path, manifest_path, w.digest(manifest_path), result)
+        r.final_state(path, w.digest(path), "1.2.4", result)
+    with (
+        patch.object(r.subprocess, "check_output", return_value="invalid"),
+        pytest.raises(ValueError, match="source commit timestamp"),
+    ):
+        r.final_state(path, w.digest(path), "1.2.3", result)
 
 
 def test_follow_up_has_no_publication_permissions_or_tasks():
@@ -980,6 +979,13 @@ def test_follow_up_has_no_publication_permissions_or_tasks():
         and "registries.py final-state" in scripts
     )
     assert "registries.py verify portal" in scripts
+    assert "workflow.py download-final" in scripts
+    for candidate_command in (
+        "verify-github-candidate",
+        "resolve-promotion",
+        "candidate-manifest.json",
+    ):
+        assert candidate_command not in scripts
     assert 'consume.sh "https://plugins.gradle.org/m2/"' in scripts
     for forbidden in (
         "publishPlugins",
@@ -1105,3 +1111,49 @@ def test_portal_marker_cannot_drop_resolution_relevant_parent(
         r.verify_portal_marker(
             observed, (repository / marker).read_bytes(), repository, "1.2.3"
         )
+
+
+@pytest.mark.parametrize("fault", [None, "hash", "size", "inventory", "version"])
+def test_final_download_uses_final_tag_and_sealed_asset_identity(
+    tmp_path, monkeypatch, fault
+):
+    version = "1.2.3"
+    contents = {name: name.encode() for name in w.asset_names(version)}
+    artifacts = [
+        {
+            "logical_name": name,
+            "size_bytes": len(data),
+            "digests": {"sha256": hashlib.sha256(data).hexdigest()},
+        }
+        for name, data in contents.items()
+    ]
+    manifest = {
+        "release": {"version": version},
+        "final_tag": {"name": "v1.2.3"},
+        "artifacts": artifacts,
+    }
+    if fault == "size":
+        artifacts[0]["size_bytes"] += 1
+    elif fault == "inventory":
+        artifacts.pop()
+    elif fault == "version":
+        manifest["final_tag"]["name"] = "v1.2.4"
+    path = tmp_path / "release-manifest-v1.json"
+    w.write(path, manifest)
+    destination = tmp_path / "assets"
+
+    def download(command, check):
+        assert command[:4] == ["gh", "release", "download", "v1.2.3"]
+        assert command[4:6] == ["--repo", w.REPOSITORY]
+        name = command[command.index("--pattern") + 1]
+        (destination / name).write_bytes(
+            b"conflicting" if fault == "hash" else contents[name]
+        )
+
+    with patch.object(w.subprocess, "run", side_effect=download):
+        if fault:
+            with pytest.raises(ValueError):
+                w.download_final(path, w.digest(path), destination, version)
+        else:
+            w.download_final(path, w.digest(path), destination, version)
+            assert {p.name: p.read_bytes() for p in destination.iterdir()} == contents
