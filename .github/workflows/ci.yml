@@ -56,7 +56,7 @@ jobs:
           overwrite-settings: false
 
       - name: Restore Gradle caches and provision wrapper
-        uses: buildish-tooling/buildish-mammoth-cache/actions/github/gradle@764097ac7b840113b968f23b0966bb8386ce1e8f # v0.2.1
+        uses: buildish-tooling/buildish-mammoth-cache/actions/github/gradle@00147da2c35e460d53e6b9d10be6bba35f4cf98f # v0.2.2
         with:
           job-mode: distributed-worker
           cache-partitions: ${{ env.MAMMOTH_CACHE_PARTITIONS }}
@@ -92,7 +92,7 @@ jobs:
           overwrite-settings: false
 
       - name: Restore Gradle caches and provision wrapper
-        uses: buildish-tooling/buildish-mammoth-cache/actions/github/gradle@764097ac7b840113b968f23b0966bb8386ce1e8f # v0.2.1
+        uses: buildish-tooling/buildish-mammoth-cache/actions/github/gradle@00147da2c35e460d53e6b9d10be6bba35f4cf98f # v0.2.2
         with:
           job-mode: distributed-worker
           cache-partitions: ${{ env.MAMMOTH_CACHE_PARTITIONS }}
@@ -141,7 +141,7 @@ jobs:
           overwrite-settings: false
 
       - name: Aggregate worker caches and publish the next generation
-        uses: buildish-tooling/buildish-mammoth-cache/actions/github/gradle@764097ac7b840113b968f23b0966bb8386ce1e8f # v0.2.1
+        uses: buildish-tooling/buildish-mammoth-cache/actions/github/gradle@00147da2c35e460d53e6b9d10be6bba35f4cf98f # v0.2.2
         with:
           job-mode: distributed-aggregator
           dependent-jobs: check, windows-check
