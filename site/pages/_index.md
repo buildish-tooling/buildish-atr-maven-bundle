@@ -53,7 +53,7 @@ Then select a root task:
 
 Signature presence is required by default. You can preserve existing signatures,
 configure generation of missing signatures, or explicitly allow unsigned output.
-The [unreleased getting-started guide](development/getting-started/) covers setup
+The [getting-started guide](releases/{{< buildish-component-version >}}/getting-started/) covers setup
 and a first bundle, including an unsigned local trial.
 
 ## Choose a bundle
@@ -71,8 +71,8 @@ orchestration remain separate steps in your release process.
 
 These pages describe the unreleased development version:
 
-- [Getting started](development/getting-started/)
-- [Configuration and publication selection](development/reference/configuration/)
-- [Tasks, layouts and output paths](development/reference/outputs/)
-- [Checksums and signing](development/reference/signing/)
-- [Compatibility and reproducibility](development/reference/compatibility/)
+- [Getting started](releases/{{< buildish-component-version >}}/getting-started/)
+- [Configuration and publication selection](releases/{{< buildish-component-version >}}/reference/configuration/)
+- [Tasks, layouts and output paths](releases/{{< buildish-component-version >}}/reference/outputs/)
+- [Checksums and signing](releases/{{< buildish-component-version >}}/reference/signing/)
+- [Compatibility and reproducibility](releases/{{< buildish-component-version >}}/reference/compatibility/)
