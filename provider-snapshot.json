@@ -68,11 +68,15 @@
     {
       "componentSlug": "atr-maven-bundle",
       "artifactKey": "atr-maven-bundle",
-      "latestStable": "0.1.1",
+      "latestStable": "0.2.0",
       "releaseLines": [
         {
           "key": "0.1",
           "latest": "0.1.1"
+        },
+        {
+          "key": "0.2",
+          "latest": "0.2.0"
         }
       ],
       "releases": [
@@ -84,6 +88,11 @@
         {
           "version": "0.1.1",
           "releaseLine": "0.1",
+          "publicationState": "published"
+        },
+        {
+          "version": "0.2.0",
+          "releaseLine": "0.2",
           "publicationState": "published"
         }
       ]
