@@ -1,6 +1,6 @@
 ---
-title: "Getting started"
-description: "Apply the settings plugin and create your first Maven publication bundle."
+title: "Create a Maven Central bundle from Gradle"
+description: "Apply the settings plugin, create a local repository ZIP, and prepare a signed Maven Central bundle."
 weight: 10
 ---
 
@@ -20,14 +20,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 -->
 
-Use **Gradle 9.1+** and **Java 17+** in the build consuming this plugin.
+Use **Gradle 9.1+** and **Java 17+**. This example uses version **0.2.0** of
+Buildish Maven Bundles for Gradle.
 
 ## Apply the settings plugin
 
-In `settings.gradle.kts`, choose a plugin version available from your configured
-plugin repositories. Maven Central is the primary distribution; configure it to
-resolve releases even while Plugin Portal approval is pending. Replace `<version>`
-with the selected version:
+Add this to `settings.gradle.kts`:
 
 ```kotlin
 pluginManagement {
@@ -36,13 +34,15 @@ pluginManagement {
         gradlePluginPortal()
     }
 }
+
 plugins {
-    id("org.buildish.atr-maven-bundle.gradle-plugin") version "<version>"
+    id("org.buildish.atr-maven-bundle.gradle-plugin") version "0.2.0"
 }
+
 rootProject.name = "my-library"
 ```
 
-For Groovy settings, use `settings.gradle`:
+In a Groovy build, add this to `settings.gradle`:
 
 ```groovy
 pluginManagement {
@@ -51,71 +51,100 @@ pluginManagement {
         gradlePluginPortal()
     }
 }
+
 plugins {
-    id 'org.buildish.atr-maven-bundle.gradle-plugin' version '<version>'
+    id 'org.buildish.atr-maven-bundle.gradle-plugin' version '0.2.0'
 }
+
 rootProject.name = 'my-library'
 ```
 
-Apply this plugin in settings. The `maven-publish` plugin and publication
-configuration belong in each publishing project's build script.
+If your settings already declare plugin repositories, add `mavenCentral()` to
+that list. Keep the `maven-publish` plugin and your publication configuration in
+each publishing project's build script.
 
-## Configure a Maven publication
+## Create your first ZIP
 
-For example, a Java library's `build.gradle.kts` can contain:
+Use your existing Maven publications or try this small Java library example in
+`build.gradle.kts`:
 
 ```kotlin
 plugins {
     `java-library`
     `maven-publish`
 }
+
 group = "org.example"
 version = "1.0"
+
 publishing {
     publications {
-        create<MavenPublication>("main") { from(components["java"]) }
+        create<MavenPublication>("main") {
+            from(components["java"])
+        }
     }
 }
 ```
 
-Each actual Maven publication is included automatically, including publications
-on the root project. Projects without Maven publications need no opt-out. See
-[publication selection](../reference/configuration/) for exclusions.
+Publications in all projects are included by default. See
+[publication selection](../reference/configuration/) if you need exclusions.
 
-## Create a first bundle
-
-For an unsigned local trial, disable the default signature-presence requirement:
+Run an unsigned local trial:
 
 ```shell
-./gradlew -PatrMavenBundle.requireSignatures=false :atrCentralArchive
+./gradlew -PatrMavenBundle.requireSignatures=false :mavenRepositoryZip
 ```
 
-With the example name and version, this creates
-`build/atr-maven-bundle/central/my-library-1.0.zip`. The ZIP starts at the Maven
-repository root and contains the native publication files plus their checksums.
-The plugin uses private local export repositories; this command does not publish
-to your configured remote repositories or Maven local.
+With the example name and version, open
+`build/maven-bundles/repository/my-library-1.0.zip`. It contains the publication
+files and checksums in Maven repository layout.
 
-For a release with existing signatures, retain the default presence check:
+## Prepare a signed bundle for Maven Central
 
-```shell
-./gradlew :atrCentralArchive
+For a Java library release, use a namespace you control and configure sources,
+Javadoc, and the required POM metadata. For the trial project, add the following
+to `build.gradle.kts` and replace the example project details with your own:
+
+```kotlin
+java {
+    withSourcesJar()
+    withJavadocJar()
+}
+
+publishing.publications.named<MavenPublication>("main") {
+    pom {
+        name.set("My Library")
+        description.set("A description of the library.")
+        url.set("https://github.com/example/my-library")
+        licenses {
+            license {
+                name.set("Apache License, Version 2.0")
+                url.set("https://www.apache.org/licenses/LICENSE-2.0")
+            }
+        }
+        developers {
+            developer {
+                id.set("maintainer")
+                name.set("Library Maintainer")
+            }
+        }
+        scm {
+            connection.set("scm:git:https://github.com/example/my-library.git")
+            developerConnection.set("scm:git:ssh://git@github.com/example/my-library.git")
+            url.set("https://github.com/example/my-library")
+        }
+    }
+}
 ```
 
-To generate missing signatures, first configure [root signing](../reference/signing/),
-then run:
+Choose a signing path:
 
-```shell
-./gradlew :prepareAtrMavenBundle --sign-missing :atrCentralArchive
-```
+- If Gradle already signs your publications, run `./gradlew :mavenRepositoryZip`.
+  The plugin preserves those signatures and checks that the required files have one.
+- To generate missing signatures, add `signing` to the root build's existing
+  `plugins` block and [configure the signer](../reference/signing/#root-signing).
+  Then run `./gradlew :prepareMavenBundle --sign-missing :mavenRepositoryZip`.
 
-## Select other outputs
-
-Request several tasks together to share one preparation and signing pass:
-
-```shell
-./gradlew :atrCentralArchive :atrNjordArchive :atrNjordTransportableFiles
-```
-
-The [output reference](../reference/outputs/) describes every task and layout.
-Producing a bundle does not upload it or establish acceptance by a remote service.
+Inspect the resulting ZIP and follow [Maven Central's requirements](https://central.sonatype.org/publish/requirements/)
+and [bundle upload instructions](https://central.sonatype.org/publish/publish-portal-upload/).
+For a Njord import, see [Export a Njord transportable bundle](../njord/).

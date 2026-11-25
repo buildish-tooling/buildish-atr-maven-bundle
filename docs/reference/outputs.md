@@ -20,38 +20,35 @@ See the License for the specific language governing permissions and
 limitations under the License.
 -->
 
-Run these root tasks from your consumer build:
+Run these tasks from the root of your build:
 
-| Layout | Archive | Exploded files | Archive alias |
+| Format | Archive | Directory | Output location |
 | --- | --- | --- | --- |
-| Maven Central | `:atrCentralArchive` | `:atrCentralFiles` | `:atrCentral` |
-| Njord repository | `:atrNjordArchive` | `:atrNjordFiles` | `:atrNjord` |
-| Njord transportable | `:atrNjordTransportableArchive` | `:atrNjordTransportableFiles` | `:atrNjordTransportable` |
+| Maven repository | `:mavenRepositoryZip` | `:mavenRepositoryFiles` | `build/maven-bundles/repository/` |
+| Njord transportable | `:njordTransportableBundle` | `:njordTransportableFiles` | `build/maven-bundles/njord-transportable/` |
 
-`:atrMavenBundle` aliases `:atrNjordArchive`. Request several concrete tasks to
-produce several layouts or both archive and files; they share one
-`:prepareAtrMavenBundle` execution.
+Output names use `<baseName>-<bundleVersion>`, with `.zip` for the Maven
+repository archive and `.ntb` for the Njord transportable archive. For example,
+`my-library` at version `1.0` gives
+`build/maven-bundles/repository/my-library-1.0.zip`. Archive entries start at the
+repository root. Internal exports and inventories stay outside the final output
+directories. Directory tasks synchronize their output and remove stale files.
+
+- Use the repository ZIP for the [Maven Central workflow](../../getting-started/).
+  Repository-format outputs also preserve native timestamped snapshots and their
+  version-directory metadata for local use. Central's release upload is for
+  release versions.
+- Use the `.ntb` archive for [Njord import](../../njord/). The format follows
+  Njord 0.9.10 properties and artifact and metadata indexes. It accepts selections
+  consisting entirely of releases or entirely of snapshots. For mixed
+  selections use a repository-format output or exclude publications first.
+  The directory form exposes the transportable tree for inspection.
+
+Request multiple outputs together to share one preparation and signing pass:
 
 ```shell
-./gradlew :atrCentralArchive :atrNjordArchive :atrNjordTransportableFiles
+./gradlew :mavenRepositoryZip :njordTransportableBundle
 ```
-
-With the default root build directory, outputs are
-`build/atr-maven-bundle/<creator-id>/<baseName>-<bundleVersion>`
-directories, or the same paths with `.zip` (`central`, `njord`) or `.ntb`
-(`njord-transportable`). Archive entries start at the repository root, without
-an extra directory prefix. Names must be nonempty filename components. Internal
-exports and inventories stay outside final output directories. Files outputs
-synchronize owned trees and remove stale contents.
-
-Central and Njord currently share the Maven repository layout. Snapshot
-publications keep native timestamped artifact filenames and version-directory
-metadata. Their inclusion is not a claim that Central's release-upload service
-accepts snapshots. NTB follows Njord **0.9.10** properties and artifact/metadata
-indexes: pure releases and pure snapshots work; a mixed selection fails only
-for NTB. Exclude publications or use repository-layout outputs for a mixed tree.
-NTB files are an exploded transportable tree, not a claim that an importer
-accepts a directory.
 
 ## Repeated builds
 

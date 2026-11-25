@@ -36,24 +36,22 @@ metadata are generated.
 
 Policy precedence is explicit preparation option > project property > settings
 convention. Project properties accept only `true` or `false`, case-insensitively.
-Only `:prepareAtrMavenBundle` accepts the Boolean options and their inverse forms:
+Only `:prepareMavenBundle` accepts the Boolean options and their inverse forms:
 
 ```shell
 # Unsigned output, using one policy for every requested creator.
-./gradlew -PatrMavenBundle.requireSignatures=false :atrCentralArchive :atrNjordFiles
+./gradlew -PatrMavenBundle.requireSignatures=false :mavenRepositoryZip :njordTransportableFiles
 
 # Equivalent task options; disabling generation is a separate choice.
-./gradlew :prepareAtrMavenBundle --no-require-signatures --no-sign-missing :atrCentralArchive :atrNjordFiles
+./gradlew :prepareMavenBundle --no-require-signatures --no-sign-missing :mavenRepositoryZip :njordTransportableFiles
 
 # Generate missing signatures once, then require them for both archives.
-./gradlew :prepareAtrMavenBundle --sign-missing :atrCentralArchive :atrNjordArchive
+./gradlew :prepareMavenBundle --sign-missing :mavenRepositoryZip :njordTransportableBundle
 ```
 
 Settings can opt out with `requireSignatures.set(false)` and can enable generation
 with `signMissing.set(true)`. The project properties are
-`atrMavenBundle.requireSignatures` and `atrMavenBundle.signMissing`. Creator and
-lifecycle tasks reject preparation options; put options immediately after the
-preparation task as shown.
+`atrMavenBundle.requireSignatures` and `atrMavenBundle.signMissing`. Put options immediately after the preparation task as shown.
 
 ## Root signing
 
@@ -95,6 +93,6 @@ already present.
 | No root signatory configured | Configure root Gradle signing before requesting generation of absent signatures. |
 | Checksum mismatch | Correct the exported payload or its existing checksum; mismatching sidecars are not silently replaced. |
 | Destination collision | Give the selected publications distinct repository paths, or exclude one publication. |
-| Unknown option on an output task | Put Boolean options immediately after `:prepareAtrMavenBundle`. |
+| Unknown option on an output task | Put Boolean options immediately after `:prepareMavenBundle`. |
 
 See [configuration](../configuration/) for settings and exclusions.

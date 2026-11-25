@@ -1,6 +1,6 @@
 ---
-title: "ATR Maven Bundle documentation"
-description: "Configure and use the ATR Maven Bundle settings plugin."
+title: "Buildish Maven Bundles for Gradle documentation"
+description: "Create a Maven repository ZIP or a Njord transportable bundle from Gradle."
 ---
 
 <!--
@@ -19,18 +19,14 @@ See the License for the specific language governing permissions and
 limitations under the License.
 -->
 
-Create local bundles from the Maven publications in your Gradle® build. The
-plugin shares collection, checksum completion and optional signing across all
-requested output tasks.
-
-Choose the intended release or unreleased development snapshot in the version
-navigation. Start with the
-[getting-started guide](getting-started/), then use the [reference](reference/)
-for individual settings and tasks.
+Turn your existing Gradle Maven publications into a local Maven repository ZIP
+for Maven Central or an `.ntb` for Njord import. Use the version navigation to
+choose the documentation for the plugin release you use.
 
 ## Guides and reference
 
-- [Getting started](getting-started/): apply the settings plugin and create a first bundle.
+- [Create a Maven Central bundle from Gradle](getting-started/)
+- [Export a Njord transportable bundle](njord/)
 - [Configuration](reference/configuration/): defaults, exclusions and policy precedence.
 - [Outputs](reference/outputs/): task names, bundle layouts and output paths.
 - [Checksums and signing](reference/signing/): reuse existing sidecars or generate missing ones.

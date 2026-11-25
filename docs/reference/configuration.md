@@ -20,14 +20,13 @@ See the License for the specific language governing permissions and
 limitations under the License.
 -->
 
-Apply the plugin in `settings.gradle.kts`, using an available plugin version and
-its repository. It is a settings plugin; applying it to a project fails.
+Apply the settings plugin as shown in the [quickstart](../../getting-started/).
 
 ```kotlin
 import org.buildish.atrmavenbundle.gradleplugin.AtrMavenBundleExtension
 
 plugins {
-    id("org.buildish.atr-maven-bundle.gradle-plugin") version "<version>"
+    id("org.buildish.atr-maven-bundle.gradle-plugin") version "0.2.0"
 }
 
 extensions.configure<AtrMavenBundleExtension>("atrMavenBundle") {
@@ -72,7 +71,7 @@ creator and archive/files variant; there is no separate creator-selection DSL.
 
 The effective Boolean policy uses this precedence:
 
-1. Explicit option on `:prepareAtrMavenBundle`.
+1. Explicit option on `:prepareMavenBundle`.
 2. Gradle project property.
 3. Settings extension value or its default.
 
@@ -80,13 +79,13 @@ The project properties are `atrMavenBundle.requireSignatures` and
 `atrMavenBundle.signMissing`. Each accepts only `true` or `false`, ignoring case.
 
 ```shell
-./gradlew -PatrMavenBundle.requireSignatures=false :atrCentralArchive
-./gradlew :prepareAtrMavenBundle --no-require-signatures --no-sign-missing :atrCentralArchive
+./gradlew -PatrMavenBundle.requireSignatures=false :mavenRepositoryZip
+./gradlew :prepareMavenBundle --no-require-signatures --no-sign-missing :mavenRepositoryZip
 ```
 
 The preparation options are `--require-signatures`, `--no-require-signatures`,
 `--sign-missing` and `--no-sign-missing`. Place them immediately after the
-preparation task. Output tasks and aliases do not accept these options.
+preparation task.
 
 See [checksums and signing](../signing/) for how presence checks and generation
 interact, and [outputs](../outputs/) for task names and paths.

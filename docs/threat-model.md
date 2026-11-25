@@ -23,7 +23,7 @@ limitations under the License.
 ## Status and scope
 
 **Draft; reviewed 2026-10-26.** This model describes the current local bundle
-creation path of the Buildish ATR Maven Bundle Gradle settings plugin. It is
+creation path of the Buildish Maven Bundles for Gradle settings plugin. It is
 context for users and report triage, not an audit, proof of security, or final
 security-team disposition. Suspected vulnerabilities belong in the private
 reporting process in `SECURITY.md`: [security@buildish.org](mailto:security@buildish.org).
