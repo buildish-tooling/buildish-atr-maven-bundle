@@ -37,10 +37,18 @@ gradlePlugin {
     plugins {
         atrMavenBundle {
             id = pluginId
-            displayName = 'Buildish ATR Maven Bundle Plugin'
+            displayName = 'Buildish Maven Bundles for Gradle'
             implementationClass = 'org.buildish.atrmavenbundle.gradleplugin.AtrMavenBundlePlugin'
-            description = displayName
-            tags.addAll('publishing', 'maven', 'atr', 'apache')
+            description = 'Build local Maven Central bundles from Gradle Maven publications for manual upload. ' +
+                'Apply in settings.gradle.kts or settings.gradle. Also exports Njord transportable bundles (.ntb). ' +
+                'Requires Gradle 9.1+ and Java 17+.'
+            tags.addAll('maven-central', 'maven-publish', 'publishing', 'njord', 'settings')
+            compatibility {
+                features {
+                    configurationCache = true
+                    isolatedProjects = true
+                }
+            }
         }
     }
 }

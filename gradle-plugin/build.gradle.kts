@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+import org.gradle.plugin.compatibility.compatibility
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
 
@@ -26,9 +27,12 @@ plugins {
   id("atr-maven-bundle-publishing")
 }
 
-val readableName = "Buildish ATR Maven Bundle Plugin"
+val readableName = "Buildish Maven Bundles for Gradle"
 
-description = readableName
+description =
+  "Build local Maven Central bundles from Gradle Maven publications for manual upload. " +
+    "Apply in settings.gradle.kts or settings.gradle. Also exports Njord transportable bundles (.ntb). " +
+    "Requires Gradle 9.1+ and Java 17+."
 
 val repoUrl = "https://buildish.org/components/atr-maven-bundle"
 
@@ -41,7 +45,13 @@ gradlePlugin {
       displayName = readableName
       implementationClass = "org.buildish.atrmavenbundle.gradleplugin.AtrMavenBundlePlugin"
       description = project.description
-      tags.addAll("publishing", "maven", "atr", "apache")
+      tags.addAll("maven-central", "maven-publish", "publishing", "njord", "settings")
+      compatibility {
+        features {
+          configurationCache = true
+          isolatedProjects = true
+        }
+      }
     }
   }
 }

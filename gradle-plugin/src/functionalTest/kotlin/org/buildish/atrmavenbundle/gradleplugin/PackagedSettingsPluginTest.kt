@@ -318,7 +318,12 @@ class PackagedSettingsPluginTest {
           .trimIndent(),
       )
     val failure = runner().buildAndFail()
-    assertThat(failure.output).contains("org.buildish.atr-maven-bundle.gradle-plugin", "Settings")
+    assertThat(failure.output)
+      .contains(
+        "org.buildish.atr-maven-bundle.gradle-plugin",
+        "must be applied in a settings script",
+        "was applied in a build script",
+      )
   }
 
   private fun aggregationFixture() {
