@@ -111,10 +111,7 @@ class BundleCreatorTest {
         inventories =
           release.inventories + bundle("1.0-SNAPSHOT", "1.0-20261026.120000-3").inventories,
       )
-    for (id in listOf("central", "njord")) {
-      assertThat(bundleCreator(id).id).isEqualTo(id)
-      assertThat(bundleCreator(id).plan(mixed).metadata).isEmpty()
-    }
+    assertThat(bundleCreator("repository").plan(mixed).metadata).isEmpty()
     assertThatThrownBy { bundleCreator("njord-transportable").plan(mixed) }
       .hasMessageContaining("mixed release and snapshot")
   }

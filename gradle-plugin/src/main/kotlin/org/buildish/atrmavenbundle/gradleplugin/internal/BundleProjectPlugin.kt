@@ -50,18 +50,26 @@ internal class BundleProjectPlugin : Plugin<Project> {
     state.bundleFiles.from(state.localFiles, publicationInputs(project, state))
     val preparation = registerPreparation(project, state)
     val outputStem = outputStem(state)
-    listOf(
-        "Central" to "central",
-        "Njord" to "njord",
-        "NjordTransportable" to "njord-transportable",
-      )
-      .forEach { (taskPart, id) ->
-        registerCreatorOutputs(project, preparation, outputStem, taskPart, id)
-      }
-    project.tasks.register("atrMavenBundle") {
-      it.group = "publishing"
-      it.dependsOn("atrNjordArchive")
-    }
+    registerCreatorOutputs(
+      project,
+      preparation,
+      outputStem,
+      "repository",
+      "mavenRepositoryZip",
+      "mavenRepositoryFiles",
+      "zip",
+      "Maven repository",
+    )
+    registerCreatorOutputs(
+      project,
+      preparation,
+      outputStem,
+      "njord-transportable",
+      "njordTransportableBundle",
+      "njordTransportableFiles",
+      "ntb",
+      "Njord transportable",
+    )
   }
 
   /** Resolves only detached publication exports through nontransitive project dependencies. */
@@ -86,7 +94,7 @@ internal class BundleProjectPlugin : Plugin<Project> {
     project: Project,
     state: BundleProjectState,
   ): TaskProvider<PrepareAtrMavenBundle> {
-    return project.tasks.register("prepareAtrMavenBundle", PrepareAtrMavenBundle::class.java) {
+    return project.tasks.register("prepareMavenBundle", PrepareAtrMavenBundle::class.java) {
       it.group = "publishing"
       it.description = "Prepares the shared local Maven publication bundle repository."
       it.publicationExports.from(state.bundleFiles)
@@ -123,30 +131,31 @@ internal class BundleProjectPlugin : Plugin<Project> {
     }
   }
 
-  /** Registers independent archive/files outputs and the archive alias for one creator. */
+  /** Registers independent archive and directory outputs for one creator. */
   private fun registerCreatorOutputs(
     project: Project,
     preparation: TaskProvider<PrepareAtrMavenBundle>,
     outputStem: Provider<String>,
-    taskPart: String,
     id: String,
+    archiveTask: String,
+    filesTask: String,
+    extension: String,
+    format: String,
   ) {
-    val zip = registerStagedArchive(project, preparation, taskPart, id)
-    val extension = if (id == "njord-transportable") "ntb" else "zip"
-    val archive =
-      project.tasks.register("atr${taskPart}Archive", InstallBundleArchive::class.java) {
-        it.group = "publishing"
-        it.description = "Creates the local $id bundle archive."
-        it.stagedArchive.set(zip.flatMap { staged -> staged.archiveFile })
-        it.archiveFile.set(
-          project.layout.buildDirectory.file(
-            outputStem.map { stem -> "atr-maven-bundle/$id/$stem.$extension" },
-          ),
-        )
-      }
-    project.tasks.register("atr${taskPart}Files", BundleFiles::class.java) {
+    val zip = registerStagedArchive(project, preparation, archiveTask, id)
+    project.tasks.register(archiveTask, InstallBundleArchive::class.java) {
       it.group = "publishing"
-      it.description = "Synchronizes the local $id bundle files."
+      it.description = "Creates a local $format bundle (.$extension)."
+      it.stagedArchive.set(zip.flatMap { staged -> staged.archiveFile })
+      it.archiveFile.set(
+        project.layout.buildDirectory.file(
+          outputStem.map { stem -> "maven-bundles/$id/$stem.$extension" },
+        ),
+      )
+    }
+    project.tasks.register(filesTask, BundleFiles::class.java) {
+      it.group = "publishing"
+      it.description = "Writes the local $format bundle as a directory."
       it.creatorId.set(id)
       it.inventoryFile.set(preparation.flatMap { prepared -> prepared.inventoryFile })
       it.repositoryDirectory.set(
@@ -154,13 +163,9 @@ internal class BundleProjectPlugin : Plugin<Project> {
       )
       it.outputDirectory.set(
         project.layout.buildDirectory.dir(
-          outputStem.map { stem -> "atr-maven-bundle/$id/$stem" },
+          outputStem.map { stem -> "maven-bundles/$id/$stem" },
         ),
       )
-    }
-    project.tasks.register("atr$taskPart") {
-      it.group = "publishing"
-      it.dependsOn(archive)
     }
   }
 
@@ -168,13 +173,13 @@ internal class BundleProjectPlugin : Plugin<Project> {
   private fun registerStagedArchive(
     project: Project,
     preparation: TaskProvider<PrepareAtrMavenBundle>,
-    taskPart: String,
+    archiveTask: String,
     id: String,
   ): TaskProvider<Zip> {
     val metadata =
       if (id == "njord-transportable") {
         project.tasks.register(
-          "createAtrNjordTransportableMetadata",
+          "stageNjordTransportableMetadata",
           BundleMetadata::class.java,
         ) {
           it.inventoryFile.set(preparation.flatMap { prepared -> prepared.inventoryFile })
@@ -186,7 +191,10 @@ internal class BundleProjectPlugin : Plugin<Project> {
           )
         }
       } else null
-    return project.tasks.register("createAtr${taskPart}Archive", Zip::class.java) {
+    return project.tasks.register(
+      "stage${archiveTask.replaceFirstChar(Char::uppercaseChar)}",
+      Zip::class.java,
+    ) {
       metadata?.let { source ->
         it.from(source.flatMap { generated -> generated.metadataDirectory })
       }

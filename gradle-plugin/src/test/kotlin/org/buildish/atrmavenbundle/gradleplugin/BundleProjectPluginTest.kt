@@ -50,7 +50,7 @@ class BundleProjectPluginTest {
     val root = ProjectBuilder.builder().build()
     InstallBundleProject(settings.copy(projectPaths = listOf(":"))).execute(root)
     val preparation =
-      root.tasks.named("prepareAtrMavenBundle", PrepareAtrMavenBundle::class.java).get()
+      root.tasks.named("prepareMavenBundle", PrepareAtrMavenBundle::class.java).get()
     assertThat(preparation.requireSignatures.get()).isTrue()
     assertThat(preparation.signatory.isPresent).isFalse()
     preparation.requireSignaturesOption(false)
@@ -65,19 +65,18 @@ class BundleProjectPluginTest {
   fun allCreatorOutputsSharePreparationProvidersAndUseFinalNames() {
     val root = ProjectBuilder.builder().withName("root with spaces").build()
     InstallBundleProject(settings.copy(projectPaths = listOf(":"))).execute(root)
-    val preparation = root.tasks.named("prepareAtrMavenBundle").get()
+    val preparation = root.tasks.named("prepareMavenBundle").get()
     root.version = "2.0"
     SnapshotBundleProject().execute(root)
     listOf(
-        "Central" to "central",
-        "Njord" to "njord",
-        "NjordTransportable" to "njord-transportable",
+        Triple("mavenRepositoryZip", "mavenRepositoryFiles", "repository"),
+        Triple("njordTransportableBundle", "njordTransportableFiles", "njord-transportable"),
       )
-      .forEach { (part, id) ->
+      .forEach { (archiveTask, filesTask, id) ->
         val zip =
           root.tasks
             .named(
-              "createAtr${part}Archive",
+              "stage${archiveTask.replaceFirstChar(Char::uppercaseChar)}",
               org.gradle.api.tasks.bundling.Zip::class.java,
             )
             .get()
@@ -87,25 +86,23 @@ class BundleProjectPluginTest {
         val files =
           root.tasks
             .named(
-              "atr${part}Files",
+              filesTask,
               org.buildish.atrmavenbundle.gradleplugin.internal.tasks.BundleFiles::class.java,
             )
             .get()
         assertThat(files.taskDependencies.getDependencies(files)).contains(preparation)
         assertThat(files.outputDirectory.get().asFile.path.replace('\\', '/'))
-          .endsWith("atr-maven-bundle/$id/root with spaces-2.0")
+          .endsWith("maven-bundles/$id/root with spaces-2.0")
         val archive =
           root.tasks
             .named(
-              "atr${part}Archive",
+              archiveTask,
               org.buildish.atrmavenbundle.gradleplugin.internal.tasks.InstallBundleArchive::class
                 .java,
             )
             .get()
         assertThat(archive.archiveFile.get().asFile.name)
           .isEqualTo("root with spaces-2.0." + if (id == "njord-transportable") "ntb" else "zip")
-        val alias = root.tasks.named("atr$part").get()
-        assertThat(alias.taskDependencies.getDependencies(alias)).containsExactly(archive)
       }
   }
 

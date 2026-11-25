@@ -221,8 +221,8 @@ jobs:
         export RELEASE_TOOLING_REPOSITORY="file://$RUNNER_TEMP/tooling/repository"
         export RELEASE_REPOSITORY="$RUNNER_TEMP/unsigned/repository"
         ./gradlew --no-daemon --no-configuration-cache --console=plain \
-          -p buildish-release-tooling/portal-publisher -PbuildCentralBundle :atrCentralArchive
-        archive="buildish-release-tooling/portal-publisher/build/atr-maven-bundle/central/buildish-atr-maven-bundle-$RELEASE_VERSION.zip"
+          -p buildish-release-tooling/portal-publisher -PbuildCentralBundle :mavenRepositoryZip
+        archive="buildish-release-tooling/portal-publisher/build/maven-bundles/repository/buildish-atr-maven-bundle-$RELEASE_VERSION.zip"
         python3 -B buildish-release-tooling/workflow.py verify-bundle "$RELEASE_REPOSITORY" "$archive" "$RELEASE_VERSION" "$BUILDISH_GPG_FINGERPRINT"
         cp "$archive" "$RUNNER_TEMP/buildish-atr-maven-bundle-$RELEASE_VERSION-maven.zip"
         # Release Tooling signs the outer GitHub asset; ATR Maven Bundle signed its contents.

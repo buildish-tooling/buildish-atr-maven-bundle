@@ -97,7 +97,7 @@ class PackagedCompatibilityTest {
     assertThat(second.output).contains("Configuration cache entry reused")
     assertThat(
         project.resolve(
-          "build/atr-maven-bundle/njord/compat bundle-1.0/org/example/compat-consumer/1.0/compat-consumer-1.0.jar",
+          "build/maven-bundles/repository/compat bundle-1.0/org/example/compat-consumer/1.0/compat-consumer-1.0.jar",
         ),
       )
       .isRegularFile()
@@ -109,8 +109,8 @@ class PackagedCompatibilityTest {
       .withGradleVersion(version)
       .withTestKitDir(File(System.getProperty("test.gradle.user.home"), "test-kit"))
       .withArguments(
-        "atrNjordArchive",
-        "atrNjordFiles",
+        "mavenRepositoryZip",
+        "mavenRepositoryFiles",
         "--stacktrace",
         "--offline",
         "--configuration-cache",

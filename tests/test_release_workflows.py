@@ -59,6 +59,38 @@ def archive_fixture(repository, archive):
             output.writestr(item, path.read_bytes())
 
 
+@pytest.mark.parametrize(
+    ("version", "task", "directory"),
+    [
+        ("0.1.1", ":atrCentralArchive", "atr-maven-bundle/central"),
+        ("0.2.0", ":mavenRepositoryZip", "maven-bundles/repository"),
+    ],
+)
+def test_release_consumer_selects_task_and_exact_archive(tmp_path, version, task, directory):
+    consumer = tmp_path / "consumer"
+    for other in ("atr-maven-bundle/central", "atr-maven-bundle/njord", "maven-bundles/repository"):
+        stale = consumer / "build" / other / "previous.zip"
+        stale.parent.mkdir(parents=True)
+        stale.write_bytes(b"stale")
+
+    archive = consumer / "build" / directory / "release-consumer-1.0.zip"
+    with zipfile.ZipFile(archive, "w") as output:
+        for extension in ("pom", "jar"):
+            output.writestr(
+                f"org/example/release-consumer/1.0/release-consumer-1.0.{extension}", ""
+            )
+
+    gradle = tmp_path / "gradle"
+    gradle.write_text('#!/usr/bin/env bash\n[[ "${@: -1}" == "$EXPECTED_TASK" ]]\n')
+    gradle.chmod(0o700)
+    subprocess.run(
+        ["bash", str(ROOT / "buildish-release-tooling/consume.sh"), "file:///fixture", version,
+         str(consumer)],
+        env={**os.environ, "BUILDISH_GRADLE": str(gradle), "EXPECTED_TASK": task},
+        check=True,
+    )
+
+
 def response(data):
     return io.BytesIO(data)
 
@@ -444,7 +476,7 @@ def test_release_job_permissions_source_and_status_policy():
     assert signing.index(
         'verify "$RUNNER_TEMP/tooling" "$TOOLING_DIGEST"'
     ) < signing.index("./gradlew")
-    assert "-PbuildCentralBundle :atrCentralArchive" in signing
+    assert "-PbuildCentralBundle :mavenRepositoryZip" in signing
     assert "workflow.py sign " not in signing and "workflow.py pack " not in signing
     assert (
         candidate["jobs"]["sign"]["steps"][-2]["env"]["TOOLING_DIGEST"]

@@ -110,18 +110,17 @@ class PackagedSettingsPluginTest {
   @Test
   fun nativeExportsPrepareTheFirstReproducibleNjordArchiveWithSnapshotsAndIsolation() {
     aggregationFixture()
-    val first =
-      runner("atrMavenBundle", "atrCentralArchive", "atrCentralFiles", "atrNjordFiles").build()
+    val first = runner("mavenRepositoryZip", "mavenRepositoryFiles").build()
     assertThat(first.output).contains("Configuration cache entry stored", "Isolated Projects")
     assertThat(first.tasks.map { it.path })
-      .contains(":prepareAtrMavenBundle", ":atrNjordArchive", ":helper:compileJava")
+      .contains(":prepareMavenBundle", ":mavenRepositoryZip", ":helper:compileJava")
       .noneMatch {
         it.startsWith(":excluded:") ||
           it.contains("ExperimentalPublication") ||
           it.contains("ToSentinelRepository") ||
           it.contains("publishToMavenLocal")
       }
-    val archive = projectDir.resolve("build/atr-maven-bundle/njord/release-1.2.3.zip")
+    val archive = projectDir.resolve("build/maven-bundles/repository/release-1.2.3.zip")
     val rootExport = projectDir.resolve("build/atr-maven-bundle-internal/exports/6d61696e")
     val libraryExport =
       projectDir.resolve("libs/api/build/atr-maven-bundle-internal/exports/6d61696e")
@@ -199,8 +198,7 @@ class PackagedSettingsPluginTest {
     staleNative.writeText("stale native output")
     val prepared = projectDir.resolve("build/atr-maven-bundle-internal/prepared-repository")
     prepared.resolve("stale.txt").writeText("stale prepared output")
-    val second =
-      runner("atrMavenBundle", "atrCentralArchive", "atrCentralFiles", "atrNjordFiles").build()
+    val second = runner("mavenRepositoryZip", "mavenRepositoryFiles").build()
     assertThat(second.output).contains("Configuration cache entry reused")
     assertThat(Files.exists(staleNative)).isFalse()
     assertThat(Files.exists(prepared.resolve("stale.txt"))).isFalse()
@@ -217,7 +215,7 @@ class PackagedSettingsPluginTest {
     Files.setLastModifiedTime(payload, FileTime.fromMillis(1700000000000))
     if (Files.getFileStore(payload).supportsFileAttributeView("posix"))
       Files.setPosixFilePermissions(payload, PosixFilePermissions.fromString("rwx------"))
-    runner("atrNjordArchive", "-x", "prepareAtrMavenBundle", "--rerun-tasks").build()
+    runner("mavenRepositoryZip", "-x", "prepareMavenBundle", "--rerun-tasks").build()
     ZipFile(archive.toFile()).use { zip ->
       beforeEntries.forEach { (path, bytes) ->
         assertThat(zip.getInputStream(zip.getEntry(path)).use { it.readBytes() })
@@ -231,12 +229,10 @@ class PackagedSettingsPluginTest {
       assertThat(zip.entries().asSequence().map { it.time }.distinct().toList()).hasSize(1)
     }
 
-    val mixedNtb = runner("atrNjordTransportableArchive").buildAndFail()
+    val mixedNtb = runner("njordTransportableBundle").buildAndFail()
     assertThat(mixedNtb.output)
       .contains("Njord transportable bundles cannot contain mixed release and snapshot")
     assertThat(Files.exists(archive)).isTrue()
-    assertThat(Files.exists(projectDir.resolve("build/atr-maven-bundle/central/release-1.2.3.zip")))
-      .isTrue()
 
     val settingsFile = projectDir.resolve("settings.gradle")
     settingsFile.writeText(
@@ -246,9 +242,9 @@ class PackagedSettingsPluginTest {
         .replace("bundleVersion.set('1.2.3')", "") +
         "\natrMavenBundle { excludePublication(':', 'late') }\n",
     )
-    runner("atrNjordArchive").build()
+    runner("mavenRepositoryZip").build()
     val defaultArchive =
-      projectDir.resolve("build/atr-maven-bundle/njord/packaged-consumer-root-final.zip")
+      projectDir.resolve("build/maven-bundles/repository/packaged-consumer-root-final.zip")
     ZipFile(defaultArchive.toFile()).use { zip ->
       assertThat(zip.entries().asSequence().map { it.name }.toList()).noneMatch {
         it.contains("late-created")
@@ -259,13 +255,13 @@ class PackagedSettingsPluginTest {
         .readText()
         .replace("requireSignatures.set(false)", "requireSignatures.set(true)"),
     )
-    val unsigned = runner("atrNjordArchive").buildAndFail()
+    val unsigned = runner("mavenRepositoryZip").buildAndFail()
     assertThat(unsigned.output).contains("Missing or empty signature")
   }
 
   private fun resolveProducedMavenLayout() {
     val resolver = projectDir.resolve("maven resolver with spaces").createDirectories()
-    val repository = projectDir.resolve("build/atr-maven-bundle/njord/release-1.2.3").toUri()
+    val repository = projectDir.resolve("build/maven-bundles/repository/release-1.2.3").toUri()
     resolver.resolve("settings.gradle").writeText("rootProject.name = 'local-maven-resolver'\n")
     resolver
       .resolve("build.gradle")

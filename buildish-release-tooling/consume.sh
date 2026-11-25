@@ -18,6 +18,16 @@ repository="$1"
 version="$2"
 consumer="$3"
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+case "$version" in
+  0.1.*)
+    bundle_task=:atrCentralArchive
+    archive_path=build/atr-maven-bundle/central/release-consumer-1.0.zip
+    ;;
+  *)
+    bundle_task=:mavenRepositoryZip
+    archive_path=build/maven-bundles/repository/release-consumer-1.0.zip
+    ;;
+esac
 mkdir -p "$consumer"
 # repository is either a retained file:// repository or one exact public Maven URL.
 cat > "$consumer/settings.gradle.kts" <<EOF
@@ -32,14 +42,11 @@ version = "1.0"
 publishing { publications { create<MavenPublication>("main") { from(components["java"]) } } }
 EOF
 "${BUILDISH_GRADLE:-$PWD/gradlew}" --no-daemon --console=plain -p "$consumer" \
-  -PatrMavenBundle.requireSignatures=false :atrCentralArchive
-python3 - "$consumer" <<'PY'
-from pathlib import Path
+  -PatrMavenBundle.requireSignatures=false "$bundle_task"
+python3 - "$consumer/$archive_path" <<'PY'
 import sys
 import zipfile
-archives = list(Path(sys.argv[1]).glob('build/atr-maven-bundle/central/*.zip'))
-assert len(archives) == 1, archives
-with zipfile.ZipFile(archives[0]) as archive:
+with zipfile.ZipFile(sys.argv[1]) as archive:
     assert 'org/example/release-consumer/1.0/release-consumer-1.0.pom' in archive.namelist()
     assert 'org/example/release-consumer/1.0/release-consumer-1.0.jar' in archive.namelist()
 PY

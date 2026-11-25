@@ -59,20 +59,18 @@ class SigningPreparationTest {
     fixture(withSigner = true)
     val args =
       arrayOf(
-        "prepareAtrMavenBundle",
+        "prepareMavenBundle",
         "--sign-missing",
-        "atrNjordArchive",
-        "atrCentralArchive",
-        "atrNjordTransportableArchive",
-        "atrCentralFiles",
-        "atrNjordFiles",
-        "atrNjordTransportableFiles",
+        "mavenRepositoryZip",
+        "njordTransportableBundle",
+        "mavenRepositoryFiles",
+        "njordTransportableFiles",
         "-PatrMavenBundle.signMissing=false",
         "-PatrMavenBundle.requireSignatures=true",
       )
     val first = runner(*args).build()
     assertThat(first.output).contains("Configuration cache entry stored", "Isolated Projects")
-    assertThat(first.tasks.filter { it.path == ":prepareAtrMavenBundle" }).hasSize(1)
+    assertThat(first.tasks.filter { it.path == ":prepareMavenBundle" }).hasSize(1)
     assertThat(first.tasks.map { it.path }).noneMatch {
       it.substringAfterLast(':').startsWith("sign")
     }
@@ -89,7 +87,7 @@ class SigningPreparationTest {
     assertThat(
         projectDir
           .resolve(
-            "build/atr-maven-bundle/njord/signed bundle-1.0/org/example/fixture/1.0/fixture-1.0.txt.asc",
+            "build/maven-bundles/repository/signed bundle-1.0/org/example/fixture/1.0/fixture-1.0.txt.asc",
           )
           .toFile(),
       )
@@ -97,7 +95,7 @@ class SigningPreparationTest {
     projectDir.resolve("payload.txt").writeText("changed payload")
     val second = runner(*args).build()
     assertThat(second.output).contains("Configuration cache entry reused")
-    assertThat(second.task(":prepareAtrMavenBundle")?.outcome).isEqualTo(TaskOutcome.SUCCESS)
+    assertThat(second.task(":prepareMavenBundle")?.outcome).isEqualTo(TaskOutcome.SUCCESS)
     assertThat(
         projectDir.resolve("build/sign-count.txt").readText().lines().filter { it.isNotEmpty() },
       )
@@ -115,17 +113,15 @@ class SigningPreparationTest {
     if (Files.getFileStore(payload).supportsFileAttributeView("posix"))
       Files.setPosixFilePermissions(payload, PosixFilePermissions.fromString("rwx------"))
     projectDir
-      .resolve("build/atr-maven-bundle/njord/signed bundle-1.0/stale.txt")
+      .resolve("build/maven-bundles/repository/signed bundle-1.0/stale.txt")
       .writeText("stale")
     runner(
-        "atrCentralArchive",
-        "atrNjordArchive",
-        "atrNjordTransportableArchive",
-        "atrCentralFiles",
-        "atrNjordFiles",
-        "atrNjordTransportableFiles",
+        "mavenRepositoryZip",
+        "njordTransportableBundle",
+        "mavenRepositoryFiles",
+        "njordTransportableFiles",
         "-x",
-        "prepareAtrMavenBundle",
+        "prepareMavenBundle",
         "--rerun-tasks",
       )
       .build()
@@ -145,12 +141,12 @@ class SigningPreparationTest {
     fixture(withSigner = false)
     val buildFile = projectDir.resolve("build.gradle")
     buildFile.writeText(buildFile.readText().replace("version = '1.0'", "version = '1.0-SNAPSHOT'"))
-    val first = runner("atrNjordTransportableArchive", "atrNjordTransportableFiles").build()
+    val first = runner("njordTransportableBundle", "njordTransportableFiles").build()
     assertThat(first.output).contains("Configuration cache entry stored", "Isolated Projects")
-    val second = runner("atrNjordTransportableArchive", "atrNjordTransportableFiles").build()
+    val second = runner("njordTransportableBundle", "njordTransportableFiles").build()
     assertThat(second.output).contains("Configuration cache entry reused")
     val root =
-      projectDir.resolve("build/atr-maven-bundle/njord-transportable/signed bundle-1.0-SNAPSHOT")
+      projectDir.resolve("build/maven-bundles/njord-transportable/signed bundle-1.0-SNAPSHOT")
     assertThat(root.resolve(".meta/repository.properties").readText())
       .contains("repositoryMode=SNAPSHOT\n")
     val artifactIndex = root.resolve(".meta/artifacts").readText()
@@ -164,7 +160,7 @@ class SigningPreparationTest {
       )
     ZipFile(
         projectDir
-          .resolve("build/atr-maven-bundle/njord-transportable/signed bundle-1.0-SNAPSHOT.ntb")
+          .resolve("build/maven-bundles/njord-transportable/signed bundle-1.0-SNAPSHOT.ntb")
           .toFile(),
       )
       .use { zip ->
@@ -181,11 +177,11 @@ class SigningPreparationTest {
   private fun assertCreatorOutputsEqualFiles(
     @Suppress("SameParameterValue") stem: String,
   ): Map<Path, ByteArray> =
-    listOf("central", "njord", "njord-transportable").associate { id ->
-      val filesRoot = projectDir.resolve("build/atr-maven-bundle/$id/$stem")
+    listOf("repository", "njord-transportable").associate { id ->
+      val filesRoot = projectDir.resolve("build/maven-bundles/$id/$stem")
       val archive =
         projectDir.resolve(
-          "build/atr-maven-bundle/$id/$stem." + if (id == "njord-transportable") "ntb" else "zip",
+          "build/maven-bundles/$id/$stem." + if (id == "njord-transportable") "ntb" else "zip",
         )
       ZipFile(archive.toFile()).use { zip ->
         val names = zip.entries().asSequence().filterNot { it.isDirectory }.map { it.name }.toList()
@@ -253,48 +249,48 @@ class SigningPreparationTest {
   @Test
   fun preparationOwnsBooleanSwitchesAndProjectPropertiesOverrideSettings() {
     fixture(withSigner = false)
-    val filesOnly = runner("atrNjordTransportableFiles").build()
+    val filesOnly = runner("njordTransportableFiles").build()
     assertThat(filesOnly.tasks.map { it.path })
-      .contains(":prepareAtrMavenBundle", ":atrNjordTransportableFiles")
+      .contains(":prepareMavenBundle", ":njordTransportableFiles")
       .noneMatch {
-        it.startsWith(":createAtr") || it.endsWith("Archive")
+        it.startsWith(":stage") || it == ":mavenRepositoryZip" || it == ":njordTransportableBundle"
       }
     val property =
-      runner("atrNjordArchive", "-PatrMavenBundle.requireSignatures=true").buildAndFail()
+      runner("mavenRepositoryZip", "-PatrMavenBundle.requireSignatures=true").buildAndFail()
     assertThat(property.output).contains("Missing or empty signature")
     runner(
-        "prepareAtrMavenBundle",
+        "prepareMavenBundle",
         "--no-require-signatures",
         "--no-sign-missing",
-        "atrNjordArchive",
+        "mavenRepositoryZip",
         "-PatrMavenBundle.requireSignatures=true",
         "-PatrMavenBundle.signMissing=true",
       )
       .build()
     val presence =
       runner(
-          "prepareAtrMavenBundle",
+          "prepareMavenBundle",
           "--require-signatures",
           "--no-sign-missing",
-          "atrNjordArchive",
+          "mavenRepositoryZip",
           "-PatrMavenBundle.requireSignatures=false",
         )
         .buildAndFail()
     assertThat(presence.output).contains("Missing or empty signature")
     val missing =
       runner(
-          "prepareAtrMavenBundle",
+          "prepareMavenBundle",
           "--sign-missing",
-          "atrNjordArchive",
+          "mavenRepositoryZip",
           "-PatrMavenBundle.signMissing=false",
         )
         .buildAndFail()
     assertThat(missing.output)
       .contains("No root signatory is configured", "configure Gradle signing in the root project")
-    val creator = runner("atrNjordArchive", "--no-require-signatures").buildAndFail()
+    val creator = runner("mavenRepositoryZip", "--no-require-signatures").buildAndFail()
     assertThat(creator.output).contains("Unknown command-line option '--no-require-signatures'")
     val invalid =
-      runner("prepareAtrMavenBundle", "-PatrMavenBundle.requireSignatures=tru").buildAndFail()
+      runner("prepareMavenBundle", "-PatrMavenBundle.requireSignatures=tru").buildAndFail()
     assertThat(invalid.output)
       .contains("Project property 'atrMavenBundle.requireSignatures' must be true or false")
   }
@@ -309,14 +305,14 @@ class SigningPreparationTest {
     )
     val args =
       arrayOf(
-        "prepareAtrMavenBundle",
+        "prepareMavenBundle",
         "--no-sign-missing",
-        "atrCentralArchive",
+        "mavenRepositoryZip",
         "-PatrMavenBundle.signMissing=true",
       )
     val first = runner(*args).build()
     assertThat(first.output).contains("Configuration cache entry stored", "Isolated Projects")
-    assertThat(projectDir.resolve("build/atr-maven-bundle/central/signed bundle-1.0.zip").toFile())
+    assertThat(projectDir.resolve("build/maven-bundles/repository/signed bundle-1.0.zip").toFile())
       .isFile()
     assertThat(runner(*args).build().output).contains("Configuration cache entry reused")
   }
@@ -441,7 +437,7 @@ class SigningPreparationTest {
       group = 'org.example'; version = '1.0'
       publishing { publications { main(MavenPublication) { artifactId = 'fixture'; artifact(file('payload.txt')) { extension = 'txt' } } } }
       // Deliberate early realization: root signing is configured afterward.
-      def preparation = tasks.named('prepareAtrMavenBundle').get()
+      def preparation = tasks.named('prepareMavenBundle').get()
       assert tasks.withType(Sign).empty
       $signing
       """

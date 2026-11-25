@@ -94,8 +94,7 @@ internal object TransportableBundleCreator : BundleCreator {
 /** Resolves the built-in creator used by a registered output task. */
 internal fun bundleCreator(id: String): BundleCreator =
   when (id) {
-    "central",
-    "njord" -> RepositoryBundleCreator(id)
+    "repository" -> RepositoryBundleCreator(id)
     "njord-transportable" -> TransportableBundleCreator
     else -> error("Unknown internal bundle creator: $id")
   }

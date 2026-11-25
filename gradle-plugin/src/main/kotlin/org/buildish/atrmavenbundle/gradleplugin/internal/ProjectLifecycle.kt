@@ -71,7 +71,7 @@ internal class SnapshotBundleProject : Action<Project> {
       state.baseName.set(settings.baseName ?: project.name)
       state.bundleVersion.set(settings.bundleVersion ?: project.version.toString())
       val signing = project.extensions.getByType(SigningExtension::class.java)
-      project.tasks.named("prepareAtrMavenBundle", PrepareAtrMavenBundle::class.java).configure {
+      project.tasks.named("prepareMavenBundle", PrepareAtrMavenBundle::class.java).configure {
         it.signatory.set(signing.signatory)
         it.signatureType.set(ArmoredSignatureType())
       }
