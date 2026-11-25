@@ -178,7 +178,9 @@ class SigningPreparationTest {
       }
   }
 
-  private fun assertCreatorOutputsEqualFiles(stem: String): Map<Path, ByteArray> =
+  private fun assertCreatorOutputsEqualFiles(
+    @Suppress("SameParameterValue") stem: String,
+  ): Map<Path, ByteArray> =
     listOf("central", "njord", "njord-transportable").associate { id ->
       val filesRoot = projectDir.resolve("build/atr-maven-bundle/$id/$stem")
       val archive =

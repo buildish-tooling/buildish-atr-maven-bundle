@@ -89,37 +89,42 @@ internal object NativePublicationInventory {
     versions: Map<ArtifactSpec, String>,
   ): Map<String, InventoryFile> {
     val candidates = linkedMapOf<String, InventoryFile>()
-    (artifacts + ArtifactSpec("pom", null) + ArtifactSpec("module", null)).distinct().forEach {
-      artifact ->
-      val version =
-        if (publication.version.endsWith("-SNAPSHOT")) versions[artifact] else publication.version
-      val mandatory =
-        artifact.extension == "pom" ||
-          (artifact in artifacts &&
-            !artifact.extension.endsWith(".asc") &&
-            checksumExtensions.none { artifact.extension.endsWith(".$it") })
-      require(version != null || !mandatory) {
-        "Missing native snapshot artifact metadata for ${publication.projectPath}/${publication.name}: $artifact"
-      }
-      if (version != null) {
-        val classifier = artifact.classifier?.takeIf { it.isNotEmpty() }
-        val filename = artifactFilename(publication.artifactId, version, artifact)
-        val source = repositoryFile(root, "$versionPath/$filename")
-        require(Files.isRegularFile(source, NOFOLLOW_LINKS) || !mandatory) {
-          "Missing native export for ${publication.projectPath}/${publication.name}: $versionPath/$filename"
-        }
-        if (Files.isRegularFile(source, NOFOLLOW_LINKS)) {
-          candidates[filename] =
-            InventoryFile(
-              "$versionPath/$filename",
-              FileRole.PRIMARY,
-              version,
-              artifact.extension,
-              classifier,
-            )
-        }
-      }
+    buildList {
+      addAll(artifacts)
+      add(ArtifactSpec("pom", null))
+      add(ArtifactSpec("module", null))
     }
+      .distinct()
+      .forEach { artifact ->
+        val version =
+          if (publication.version.endsWith("-SNAPSHOT")) versions[artifact] else publication.version
+        val mandatory =
+          artifact.extension == "pom" ||
+            (artifact in artifacts &&
+              !artifact.extension.endsWith(".asc") &&
+              checksumExtensions.none { artifact.extension.endsWith(".$it") })
+        require(version != null || !mandatory) {
+          "Missing native snapshot artifact metadata for ${publication.projectPath}/${publication.name}: $artifact"
+        }
+        if (version != null) {
+          val classifier = artifact.classifier?.takeIf { it.isNotEmpty() }
+          val filename = artifactFilename(publication.artifactId, version, artifact)
+          val source = repositoryFile(root, "$versionPath/$filename")
+          require(Files.isRegularFile(source, NOFOLLOW_LINKS) || !mandatory) {
+            "Missing native export for ${publication.projectPath}/${publication.name}: $versionPath/$filename"
+          }
+          if (Files.isRegularFile(source, NOFOLLOW_LINKS)) {
+            candidates[filename] =
+              InventoryFile(
+                "$versionPath/$filename",
+                FileRole.PRIMARY,
+                version,
+                artifact.extension,
+                classifier,
+              )
+          }
+        }
+      }
     return candidates.filterKeys { filename ->
       !(filename.endsWith(".asc") && candidates.containsKey(filename.removeSuffix(".asc"))) &&
         checksumExtensions.none {
