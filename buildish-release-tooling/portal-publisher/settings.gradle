@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Only candidate packaging loads ATR Maven Bundle, from the digest-bound build
+// Only candidate packaging loads the bundle plugin, from the digest-bound build
 // of the trusted workflow revision. Portal promotion only uploads retained bytes.
 buildscript {
     if (providers.gradleProperty('buildCentralBundle').isPresent()) {

@@ -225,7 +225,7 @@ jobs:
         archive="buildish-release-tooling/portal-publisher/build/maven-bundles/repository/buildish-atr-maven-bundle-$RELEASE_VERSION.zip"
         python3 -B buildish-release-tooling/workflow.py verify-bundle "$RELEASE_REPOSITORY" "$archive" "$RELEASE_VERSION" "$BUILDISH_GPG_FINGERPRINT"
         cp "$archive" "$RUNNER_TEMP/buildish-atr-maven-bundle-$RELEASE_VERSION-maven.zip"
-        # Release Tooling signs the outer GitHub asset; ATR Maven Bundle signed its contents.
+        # Release Tooling signs the outer GitHub asset. The bundle plugin signed its contents.
         bash buildish-release-tooling/release-tooling.sh prepare-release-assets --output-dir "$RUNNER_TEMP/signed/assets" \
           "$RUNNER_TEMP/buildish-atr-maven-bundle-$RELEASE_VERSION-maven.zip"
         python3 -B buildish-release-tooling/workflow.py seal "$RUNNER_TEMP/signed"

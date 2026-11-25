@@ -90,7 +90,7 @@ tasks.withType(GenerateModuleMetadata).configureEach {
 }
 
 if (bundleMode) {
-    // ATR Maven Bundle signs after export; Plugin Publish must not sign a second time.
+    // The bundle plugin signs after export. Disable the second signing pass.
     tasks.withType(org.gradle.plugins.signing.Sign).configureEach { enabled = false }
     signing {
         def key = providers.environmentVariable('BUILDISH_GPG_PRIVATE_KEY').get()

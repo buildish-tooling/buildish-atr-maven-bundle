@@ -41,14 +41,13 @@ promising archive byte stability across tag names.
 
 Central publication and Portal submission are required; public Portal approval
 follows independently. Native Maven Publish exports the component payloads without credentials. A separate
-`build-tooling` job builds ATR Maven Bundle from `github.workflow_sha`, independently
+`build-tooling` job builds Buildish Maven Bundles for Gradle from `github.workflow_sha`, independently
 of the selected release source. Its digest-bound local repository is the only
 source for the packaging plugin loaded by the trusted publisher build.
 
 With `-PbuildCentralBundle`, that build consumes the selected payloads unchanged,
-uses the root Gradle signer through ATR Maven Bundle, completes all Maven checksums
-and runs `atrCentralArchive`. Native Plugin Publish signing tasks are disabled in
-this mode so ATR Maven Bundle owns signature creation. Independent verification
+runs `:mavenRepositoryZip`, and uses the root Gradle signer to complete Maven
+signatures and checksums. Bundle mode disables native Plugin Publish signing tasks. Independent verification
 checks primary-byte preservation, all checksums and the full signing fingerprint.
 Release Tooling signs the outer ZIP for GitHub; it does not generate Maven
 sidecars. The Python integration validates and reads ZIPs but does not create them.

@@ -46,7 +46,9 @@ Checkout/update accept `--remote`, `--source`, `--worktree`, and `--branch`.
 The default remote is this component's HTTPS URL, never Release Tooling's.
 Neither command changes remote configuration. Import never fetches.
 
-After verifying successful publication to both registries and GitHub:
+After verifying Maven Central publication and the finalized GitHub release,
+import the matching docs. Use the Maven Central setup in the quickstart until
+the release is publicly available on the Plugin Portal too:
 
 ```sh
 # Fetch the exact final tag separately, when authorized and missing locally.

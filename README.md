@@ -26,7 +26,7 @@ with `maven-publish` in your projects.
 
 - [Maven Central quickstart and released guides](https://buildish.org/components/atr-maven-bundle/latest/)
 - [Njord output and import](https://buildish.org/components/atr-maven-bundle/#njord)
-- [Release notes](https://github.com/buildish-tooling/buildish-atr-maven-bundle/releases)
+- [0.2.0 migration notes](buildish-release-tooling/release-notes/0.2.0.md)
 
 ## Contributing
 

@@ -19,9 +19,9 @@ limitations under the License.
 Read [the contract](RELEASE-CONTRACT.md) and [readiness](READINESS.md) first.
 These are component-owned GitHub Actions workflows around an installed CLI,
 ordinary Gradle builds, a Central Publisher API upload and Maven readback. No
-sibling checkout is required in production. The separate publisher build uses a trusted bootstrap of ATR Maven Bundle for
-candidate signing/checksums/ZIP creation, then uploads retained files to the Plugin
-Portal during promotion. Python handles Central upload/status/readback. NMCP is
+sibling checkout is required in production. The separate publisher build uses a
+trusted build of the plugin for candidate signing, checksums, and ZIP creation.
+During promotion it uploads the retained files to the Plugin Portal. Python handles Central upload/status/readback. NMCP is
 removed.
 
 The commands below mutate remote state where indicated. Run them only after the
@@ -151,10 +151,10 @@ promotion, with explicit modes:
   bootstrap repository. `RELEASE_VERSION` selects the final Maven version.
 - The trusted signing step supplies `BUILDISH_GPG_PRIVATE_KEY`,
   `BUILDISH_GPG_PASSPHRASE` and the full configured `BUILDISH_GPG_FINGERPRINT`.
-  `-PbuildCentralBundle :atrCentralArchive` enables ATR Maven Bundle signing and
+  `-PbuildCentralBundle :mavenRepositoryZip` enables bundle signing and
   checksum completion. No selected payload is compiled or regenerated there.
 - The native ZIP is under
-  `build/atr-maven-bundle/central/buildish-atr-maven-bundle-X.Y.Z.zip` relative to
+  `build/maven-bundles/repository/buildish-atr-maven-bundle-X.Y.Z.zip` relative to
   the publisher directory. Independent checks verify its exact file inventory,
   bare Maven checksums, primary-byte preservation and every signing fingerprint.
   Release Tooling then signs the outer GitHub ZIP asset.
@@ -258,7 +258,15 @@ Require `resolve`, `stage`, `verify-central`, `verify-portal`, and `publish` eac
 succeed. Upload jobs may be intentionally skipped for matching publications or an
 explicitly selected previous Portal submission. An overall green run with skipped
 final publication is not complete. Retain candidate/final digests and import/curate
-versioned docs after completion; docs deployment does not rebuild packages.
+versioned docs after completion.
+
+Before advancing the site to a new release, try the exact version in the
+candidate's quickstart against its documented plugin repository. Once Central
+serves that version and the release is finalized, select the matching released
+docs and quickstart together. For 0.2.0, switch the component landing page’s
+Njord link from the output reference to the dedicated `njord/` recipe when
+the new route is available. Run the site's link checks before deployment.
+The Central install path can be used while public Portal verification is pending.
 
 ## Portal approval and follow-up verification
 
@@ -311,6 +319,14 @@ or publication permissions. On success, retain `portal-follow-up-VERSION-RUN_ID`
 and the workflow run URL as later evidence. The immutable release's original
 pending record remains a truthful historical snapshot. No assets are added to it.
 If approval is still pending, retry this workflow later with the same inputs.
+
+Open the public Plugin Portal listing anonymously after approval. Check the
+description, tags, Configuration Cache badge, feature declarations, documentation
+link, and exact version. Try the generated plugin declaration in a clean
+`settings.gradle.kts` using Gradle's default Plugin Portal resolution. With a
+sample Maven publication configured, run the documented trial command and check
+the ZIP at its documented path. Check that the landing page leads to the released
+quickstart for that version.
 
 The RC release, RC assets and RC tag are not read by this post-release workflow.
 Historical candidate identity and digest come from the sealed final manifest.
