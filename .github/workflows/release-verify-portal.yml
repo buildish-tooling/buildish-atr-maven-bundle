@@ -93,5 +93,5 @@ jobs:
         name: portal-follow-up-${{ inputs.version }}-${{ github.run_id }}
         path: ${{ runner.temp }}/portal
         if-no-files-found: error
-        retention-days: 90
+        retention-days: 10
         overwrite: true

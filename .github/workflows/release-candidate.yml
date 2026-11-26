@@ -78,7 +78,7 @@ jobs:
         name: candidate-resolution-${{ github.run_id }}
         path: ${{ runner.temp }}/resolution
         if-no-files-found: error
-        retention-days: 90
+        retention-days: 10
         overwrite: true
   build:
     runs-on: ubuntu-26.04
@@ -135,7 +135,7 @@ jobs:
         name: candidate-unsigned-${{ github.run_id }}
         path: ${{ runner.temp }}/unsigned
         if-no-files-found: error
-        retention-days: 90
+        retention-days: 10
         overwrite: true
   build-tooling:
     runs-on: ubuntu-26.04
@@ -179,7 +179,7 @@ jobs:
         name: candidate-tooling-${{ github.run_id }}
         path: ${{ runner.temp }}/tooling
         if-no-files-found: error
-        retention-days: 90
+        retention-days: 10
         overwrite: true
   sign:
     runs-on: ubuntu-26.04
@@ -242,7 +242,7 @@ jobs:
         name: candidate-signed-${{ github.run_id }}
         path: ${{ runner.temp }}/signed
         if-no-files-found: error
-        retention-days: 90
+        retention-days: 10
         overwrite: true
   publish-candidate:
     runs-on: ubuntu-26.04
@@ -298,5 +298,5 @@ jobs:
         name: candidate-manifest-${{ github.run_id }}
         path: ${{ runner.temp }}/candidate
         if-no-files-found: error
-        retention-days: 90
+        retention-days: 10
         overwrite: true

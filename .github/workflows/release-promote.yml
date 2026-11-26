@@ -75,7 +75,7 @@ jobs:
         name: promotion-input-${{ github.run_id }}
         path: ${{ runner.temp }}/promotion
         if-no-files-found: error
-        retention-days: 90
+        retention-days: 10
         overwrite: true
   stage:
     runs-on: ubuntu-26.04
@@ -122,7 +122,7 @@ jobs:
         name: promotion-stage-${{ github.run_id }}
         path: ${{ runner.temp }}/stage
         if-no-files-found: error
-        retention-days: 90
+        retention-days: 10
         overwrite: true
   inspect-central:
     runs-on: ubuntu-26.04
@@ -213,7 +213,7 @@ jobs:
         name: central-deployment-${{ github.run_id }}
         path: ${{ runner.temp }}/deployment
         if-no-files-found: ignore
-        retention-days: 90
+        retention-days: 10
         overwrite: true
   verify-central:
     runs-on: ubuntu-26.04
@@ -271,7 +271,7 @@ jobs:
         name: central-verification-${{ github.run_id }}
         path: ${{ runner.temp }}/central
         if-no-files-found: error
-        retention-days: 90
+        retention-days: 10
         overwrite: true
   inspect-portal:
     runs-on: ubuntu-26.04
@@ -423,7 +423,7 @@ jobs:
         name: portal-verification-${{ github.run_id }}
         path: ${{ runner.temp }}/portal
         if-no-files-found: error
-        retention-days: 90
+        retention-days: 10
         overwrite: true
   publish:
     runs-on: ubuntu-26.04
@@ -510,5 +510,5 @@ jobs:
         name: promotion-sealed-${{ github.run_id }}
         path: ${{ runner.temp }}/sealed
         if-no-files-found: error
-        retention-days: 90
+        retention-days: 10
         overwrite: true
