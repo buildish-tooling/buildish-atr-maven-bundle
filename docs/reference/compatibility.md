@@ -72,7 +72,7 @@ storage/reuse and isolated projects.
 
 ### Windows qualification job
 
-The independent Windows job uses `gradlew.bat` and Java 21 to build and run the
+The independent Windows job uses `gradlew.bat` and Java 25 to build and run the
 existing software-signing fixture through `:gradle-plugin:functionalTest`. The
 fixture creates a consumer build in a path containing spaces and checks strict
 configuration-cache storage/reuse and isolated projects. It uses the plugin
