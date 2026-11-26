@@ -6,7 +6,7 @@
       "type": "git-tags",
       "displayName": "ATR Maven Bundle Git tags",
       "baseUrl": "https://github.com/buildish-tooling/buildish-atr-maven-bundle",
-      "fetchedAt": "2026-11-26T13:25:22.716547+00:00"
+      "fetchedAt": "2026-11-26T13:35:27.791483+00:00"
     }
   ],
   "records": [
@@ -67,7 +67,10 @@
       "externalUrl": "https://github.com/buildish-tooling/buildish-atr-maven-bundle/releases/tag/v0.2.0",
       "releaseNotes": {
         "path": "release-notes/0.2.0.md"
-      }
+      },
+      "releaseLine": "0.2",
+      "publicationState": "published",
+      "publishedAt": "2026-11-25T13:35:45Z"
     }
   ],
   "artifacts": [
