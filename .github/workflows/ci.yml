@@ -91,12 +91,22 @@ jobs:
           java-version: '25'
           overwrite-settings: false
 
+      # Use bsdtar which is faster than tar.exe from the Git installation.
+      - if: runner.os == 'Windows'
+        shell: pwsh
+        run: Rename-Item "$env:ProgramFiles\Git\usr\bin\tar.exe" tar.exe.bak
+
       - name: Restore Gradle caches and provision wrapper
         uses: buildish-tooling/buildish-mammoth-cache/actions/github/gradle@ef15e2461c37cbfbb0ed915f015f50bec2a7f122 # v0.5.1
         with:
           job-mode: distributed-worker
           cache-partitions: ${{ env.MAMMOTH_CACHE_PARTITIONS }}
           wrapper-properties-files: gradle/wrapper/gradle-wrapper.properties
+
+      # Revert the bsdtar tweak above
+      - if: runner.os == 'Windows'
+        shell: pwsh
+        run: Rename-Item "$env:ProgramFiles\Git\usr\bin\tar.exe.bak" tar.exe
 
       - name: Run the representative packaged signing and output fixture
         shell: pwsh
