@@ -163,10 +163,18 @@ testing {
         implementation(gradleTestKit())
         implementation(libs.assertj.core)
         // Real signing fixture uses the signing libraries already supplied by this Gradle.
+        // Classpath fingerprints are order-sensitive, and a plain fileTree follows the directory
+        // listing order. That order is not stable on Linux filesystems across freshly restored
+        // Gradle distributions, which changed the cache keys of compileFunctionalTestKotlin and
+        // functionalTest between CI runs. Sorting by name keeps the classpath order reproducible.
         implementation(
-          fileTree(gradle.gradleHomeDir!!.resolve("lib/plugins")) {
-            include("bcpg-*.jar", "bcprov-*.jar", "bcutil-*.jar")
-          },
+          files(
+            fileTree(gradle.gradleHomeDir!!.resolve("lib/plugins")) {
+                include("bcpg-*.jar", "bcprov-*.jar", "bcutil-*.jar")
+              }
+              .elements
+              .map { jars -> jars.sortedBy { it.asFile.name } },
+          ),
         )
       }
       targets.all {
