@@ -110,6 +110,34 @@ stutter {
   }
 }
 
+/** Lets a TestKit test task consume the plugin published to the functional-test repository. */
+fun Test.usePackagedPlugin(withGradleInstallation: Boolean) {
+  val repository = layout.settingsDirectory.dir("build/functional-test-repository")
+  dependsOn(
+    ":publishMavenJavaPublicationToFunctionalTestRepository",
+    "publishPluginMavenPublicationToFunctionalTestRepository",
+    "publishAtrMavenBundlePluginMarkerMavenPublicationToFunctionalTestRepository",
+  )
+  // Publishing a -SNAPSHOT writes timestamped file names and maven-metadata.xml files, which made
+  // the cache key unique on every run. The remaining files are reproducible, so fingerprint only
+  // their contents and leave the version to the `plugin.version` input.
+  inputs
+    .files(fileTree(repository) { exclude("**/maven-metadata.xml*") })
+    .withPathSensitivity(PathSensitivity.NONE)
+    .withPropertyName("functionalTestRepository")
+  jvmArgumentProviders.add(
+    objects.newInstance<PackagedPluginTestArguments>().apply {
+      this.repository = repository
+      pluginVersion = project.version.toString()
+      shadedJar = tasks.shadowJar.flatMap { it.archiveFile }
+      gradleUserHome = gradle.gradleUserHomeDir.absolutePath
+      if (withGradleInstallation) {
+        gradleInstallation = gradle.gradleHomeDir!!.absolutePath
+      }
+    },
+  )
+}
+
 testing {
   suites {
     @Suppress("UnstableApiUsage") named<JvmTestSuite>("test") { useJUnitJupiter() }
@@ -123,22 +151,7 @@ testing {
       }
       targets.all {
         testTask.configure {
-          dependsOn(
-            ":publishMavenJavaPublicationToFunctionalTestRepository",
-            "publishPluginMavenPublicationToFunctionalTestRepository",
-            "publishAtrMavenBundlePluginMarkerMavenPublicationToFunctionalTestRepository",
-          )
-          inputs.dir(layout.settingsDirectory.dir("build/functional-test-repository"))
-          systemProperty(
-            "plugin.repository",
-            layout.settingsDirectory.dir("build/functional-test-repository").asFile.absolutePath,
-          )
-          systemProperty("plugin.version", project.version.toString())
-          systemProperty(
-            "plugin.shaded.jar",
-            tasks.named<Jar>("shadowJar").flatMap { it.archiveFile }.get().asFile.absolutePath,
-          )
-          systemProperty("test.gradle.user.home", gradle.gradleUserHomeDir.absolutePath)
+          usePackagedPlugin(withGradleInstallation = false)
         }
       }
     }
@@ -158,23 +171,7 @@ testing {
       }
       targets.all {
         testTask.configure {
-          dependsOn(
-            ":publishMavenJavaPublicationToFunctionalTestRepository",
-            "publishPluginMavenPublicationToFunctionalTestRepository",
-            "publishAtrMavenBundlePluginMarkerMavenPublicationToFunctionalTestRepository",
-          )
-          inputs.dir(layout.settingsDirectory.dir("build/functional-test-repository"))
-          systemProperty(
-            "plugin.repository",
-            layout.settingsDirectory.dir("build/functional-test-repository").asFile.absolutePath,
-          )
-          systemProperty("plugin.version", project.version.toString())
-          systemProperty(
-            "plugin.shaded.jar",
-            tasks.named<Jar>("shadowJar").get().archiveFile.get().asFile.absolutePath,
-          )
-          systemProperty("gradle.installation", gradle.gradleHomeDir!!.absolutePath)
-          systemProperty("test.gradle.user.home", gradle.gradleUserHomeDir.absolutePath)
+          usePackagedPlugin(withGradleInstallation = true)
           shouldRunAfter(tasks.named("test"))
         }
       }

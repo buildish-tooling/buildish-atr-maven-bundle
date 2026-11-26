@@ -131,6 +131,22 @@ tasks {
       "-p",
       "test_versioned_docs.py",
     )
+
+    // Exec tasks without outputs are never cacheable. The tests only exercise the scripts in
+    // tools/versioned-docs (GitHub access is mocked), so declare those as inputs and record a
+    // successful run in a stamp file that the build cache can restore.
+    inputs
+      .file("tests/test_versioned_docs.py")
+      .withPathSensitivity(PathSensitivity.RELATIVE)
+      .withPropertyName("tests")
+    inputs
+      .files(fileTree("tools/versioned-docs") { exclude("**/__pycache__/**") })
+      .withPathSensitivity(PathSensitivity.RELATIVE)
+      .withPropertyName("scripts")
+    val stamp = layout.buildDirectory.file("versioned-docs-test/success")
+    outputs.file(stamp).withPropertyName("stamp")
+    outputs.cacheIf { true }
+    doLast { stamp.get().asFile.apply { parentFile.mkdirs() }.writeText("ok\n") }
   }
 
   named<Wrapper>("wrapper") {
