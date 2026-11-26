@@ -84,6 +84,12 @@ copied under a release-version route:
 Links to another component may use that component's public catalog mount path,
 for example `/components/site-pipeline/`.
 
+## Release Work
+
+- When asked to prepare a release, follow [Local release preparation](buildish-release-tooling/RELEASE-PROCESS.md#local-release-preparation).
+- When asked to import or update released documentation, follow [Manual post-release import](tools/versioned-docs/README.md#manual-post-release-import).
+- Leave release candidate creation and final release promotion to human maintainers.
+
 ## Security issues
 
 Before reporting or fixing security issues, read

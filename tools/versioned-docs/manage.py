@@ -26,14 +26,24 @@ import sys
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.request import Request, urlopen
 
-DEFAULT_REMOTE = "https://github.com/buildish-tooling/buildish-atr-maven-bundle.git"
+GITHUB_REPOSITORY = "buildish-tooling/buildish-atr-maven-bundle"
+REPOSITORY = f"https://github.com/{GITHUB_REPOSITORY}"
+DEFAULT_REMOTE = f"{REPOSITORY}.git"
 COMPONENT = "atr-maven-bundle"
 PROVIDER = "atr-maven-bundle-tags"
-REPOSITORY = "https://github.com/buildish-tooling/buildish-atr-maven-bundle"
 ROOT = Path(__file__).resolve().parents[2]
 VERSION = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
 PUBLICATION_STATES = (None, "published", "hidden", "withdrawn", "tombstoned")
+EXCLUDED_STATES = {"hidden", "withdrawn", "tombstoned"}
+# Release Tooling's release_notes.path_template in buildish-release-tooling/release-config.yaml.
+NOTES_SOURCE = "buildish-release-tooling/release-notes/{version}.md"
+NOTES_DIRECTORY = "release-notes"
+
+
+def notes_reference(version: str) -> dict:
+    return {"path": f"{NOTES_DIRECTORY}/{version}.md"}
 
 
 def artifact_identity() -> dict:
@@ -165,6 +175,108 @@ def version_key(value: str) -> tuple[int, ...]:
     return tuple(int(part) for part in value.split("."))
 
 
+def github_json(endpoint: str) -> dict:
+    request = Request(
+        f"https://api.github.com/repos/{GITHUB_REPOSITORY}/{endpoint}",
+        headers={"Accept": "application/vnd.github+json"},
+    )
+    try:
+        with urlopen(request, timeout=15) as response:
+            data = json.load(response)
+    except (OSError, ValueError) as error:
+        raise ValueError(f"GitHub lookup failed for {endpoint}: {error}") from error
+    if not isinstance(data, dict):
+        raise ValueError(f"Expected a GitHub object for {endpoint}")
+    return data
+
+
+def hosted_tag_commit(tag: str) -> str:
+    ref = f"refs/tags/{tag}"
+    response = github_json(f"git/ref/tags/{tag}")
+    if response.get("ref") != ref:
+        raise ValueError(f"GitHub did not return the exact ref {ref}")
+    target = response.get("object")
+    seen = set()
+    while isinstance(target, dict):
+        sha = target.get("sha")
+        if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha):
+            break
+        if target.get("type") == "commit":
+            return sha
+        if target.get("type") != "tag" or sha in seen:
+            break
+        seen.add(sha)
+        target = github_json(f"git/tags/{sha}").get("object")
+    raise ValueError(f"GitHub ref {ref} does not resolve to a commit")
+
+
+def verified_publication_time(tag: str, commit: str) -> str:
+    release = github_json(f"releases/tags/{tag}")
+    if (
+        release.get("tag_name") != tag
+        or release.get("draft") is not False
+        or release.get("prerelease") is not False
+    ):
+        raise ValueError(f"GitHub does not report a final published release for {tag}")
+    published_at = release.get("published_at")
+    try:
+        if not isinstance(published_at, str):
+            raise ValueError
+        datetime.strptime(published_at, "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError:
+        raise ValueError(
+            f"GitHub release {tag} has no valid publication timestamp"
+        ) from None
+    # target_commitish may name a branch. Resolve the hosted tag itself.
+    if hosted_tag_commit(tag) != commit:
+        raise ValueError(f"GitHub tag {tag} does not match the local commit {commit}")
+    return published_at
+
+
+def publication_complete(record: dict) -> bool:
+    return (
+        record.get("publicationState") == "published"
+        and "publishedAt" in record
+        and record.get("releaseLine") == record["version"].rsplit(".", 1)[0]
+        and record.get("docsSource")
+        == {"repository": REPOSITORY, "root": "docs", "ref": record["commitSha"]}
+    )
+
+
+def published_metadata(record: dict, artifacts: list) -> tuple[dict, list]:
+    version = record["version"]
+    line_key = version.rsplit(".", 1)[0]
+    artifact = artifacts[0] if artifacts else artifact_identity()
+    for facts in (record, *(artifact.get("releases") or [])):
+        if facts["version"] != version:
+            continue
+        if facts.get("publicationState") not in (None, "published"):
+            raise ValueError(
+                f"Release {version} is excluded by snapshot publication policy"
+            )
+        if facts.get("releaseLine") not in (None, line_key):
+            raise ValueError(f"Release {version} has a conflicting primary release line")
+
+    commit = record["commitSha"]
+    published_at = verified_publication_time(record["tag"], commit)
+    record = {
+        **record,
+        "releaseLine": line_key,
+        "publicationState": "published",
+        "publishedAt": published_at,
+        "docsSource": {"repository": REPOSITORY, "root": "docs", "ref": commit},
+    }
+    lines = {line["key"]: line for line in artifact.get("releaseLines") or []}
+    line = lines.get(line_key, {"key": line_key})
+    if "latest" not in line or version_key(version) > version_key(line["latest"]):
+        lines[line_key] = {**line, "latest": version}
+    artifact = {**artifact, "releaseLines": list(lines.values())}
+    latest = artifact.get("latestStable")
+    if latest is None or version_key(version) > version_key(latest):
+        artifact["latestStable"] = version
+    return record, [artifact]
+
+
 def load_snapshot(path: Path) -> dict:
     if path.is_symlink():
         raise ValueError("Snapshot must not be a symlink")
@@ -200,6 +312,10 @@ def load_snapshot(path: Path) -> dict:
             raise ValueError("Snapshot contains foreign or duplicate records")
         if record.get("publicationState") not in PUBLICATION_STATES:
             raise ValueError("Snapshot contains an invalid publication state")
+        if "releaseNotes" in record and record["releaseNotes"] != notes_reference(
+            version
+        ):
+            raise ValueError(f"Snapshot contains unmanaged release notes for {version}")
         observed = record.get("publicationState")
         curated = curated_states.get(version)
         if observed is not None and curated is not None and observed != curated:
@@ -248,13 +364,40 @@ def export_docs(source: Path, tag: str, destination: Path) -> None:
     for relative, blob in entries:
         output = destination / relative
         output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_bytes(
-            subprocess.run(
-                ["git", "-C", str(source), "cat-file", "blob", blob],
-                check=True,
-                capture_output=True,
-            ).stdout
-        )
+        output.write_bytes(git_blob(source, blob))
+
+
+def git_blob(source: Path, blob: str) -> bytes:
+    return subprocess.run(
+        ["git", "-C", str(source), "cat-file", "blob", blob],
+        check=True,
+        capture_output=True,
+    ).stdout
+
+
+def tagged_notes_blob(source: Path, commit: str, version: str) -> str | None:
+    path = NOTES_SOURCE.format(version=version)
+    listing = git(source, "ls-tree", commit, "--", path)
+    if not listing:
+        return None
+    metadata, _path = listing.split("\t", 1)
+    mode, kind, blob = metadata.split()
+    if mode not in {"100644", "100755"} or kind != "blob":
+        raise ValueError(f"Unsupported release notes entry in {commit}: {path}")
+    return blob
+
+
+def strip_title(text: str) -> str:
+    """Drop one leading top-level heading; the site generates the page title."""
+    prefix = ""
+    if text.startswith("<!--") and "-->" in text:
+        end = text.index("-->") + 3
+        prefix, text = text[:end], text[end:]
+    body = text.lstrip("\n")
+    first, _, rest = body.partition("\n")
+    if not first.startswith("# "):
+        return prefix + text
+    return prefix + text[: len(text) - len(body)] + rest.lstrip("\n")
 
 
 def import_docs(args: argparse.Namespace) -> None:
@@ -287,7 +430,13 @@ def import_docs(args: argparse.Namespace) -> None:
             "No matching local stable tags; fetch tags or use --version X.Y.Z"
         )
     records = previous.copy()
+    previous_artifacts = snapshot.get("artifacts", [artifact_identity()])
+    artifacts = previous_artifacts
     exports = []
+    notes_exports = []
+    notes_root = worktree / NOTES_DIRECTORY
+    if notes_root.is_symlink() or (notes_root.exists() and not notes_root.is_dir()):
+        raise ValueError(f"Expected managed directory: {notes_root}")
     for version in selected:
         tag = f"v{version}"
         commit = git(
@@ -305,17 +454,7 @@ def import_docs(args: argparse.Namespace) -> None:
             raise ValueError(f"Refusing to replace unowned path: {target}")
         if target.exists() and any(item.is_symlink() for item in target.rglob("*")):
             raise ValueError(f"Existing docs must not contain symlinks: {target}")
-        if old and not args.full_rebuild:
-            if (curated_states.get(version) or old.get("publicationState")) not in {
-                "hidden",
-                "withdrawn",
-                "tombstoned",
-            } and not (worktree / version / "_index.md").is_file():
-                raise ValueError(
-                    f"Missing docs for {version}; use --full-rebuild to restore"
-                )
-            continue
-        records[version] = old or {
+        record = old or {
             "provider": PROVIDER,
             "kind": "released",
             "componentSlug": COMPONENT,
@@ -327,8 +466,46 @@ def import_docs(args: argparse.Namespace) -> None:
             "externalId": f"git:buildish-atr-maven-bundle:{tag}",
             "externalUrl": f"{REPOSITORY}/releases/tag/{tag}",
         }
+        notes_target = notes_root / f"{version}.md"
+        if notes_target.is_symlink() or (
+            notes_target.exists()
+            and (not notes_target.is_file() or "releaseNotes" not in record)
+        ):
+            raise ValueError(f"Refusing to replace unowned path: {notes_target}")
+        excluded = (
+            curated_states.get(version) or record.get("publicationState")
+        ) in EXCLUDED_STATES
+        # Excluded attempts need no hosted release; complete records were verified before.
+        if not excluded and not publication_complete(record):
+            record, artifacts = published_metadata(record, artifacts)
+        # Rebuilt docs refresh their notes; existing records gain missing notes.
+        if not excluded and (
+            args.full_rebuild
+            or not old
+            or "releaseNotes" not in record
+            or not notes_target.is_file()
+        ):
+            blob = tagged_notes_blob(args.source, commit, version)
+            if blob is not None:
+                notes_exports.append((version, blob))
+                record = {**record, "releaseNotes": notes_reference(version)}
+        records[version] = record
+        if old and not args.full_rebuild:
+            if (
+                curated_states.get(version) or old.get("publicationState")
+            ) not in EXCLUDED_STATES and not (worktree / version / "_index.md").is_file():
+                raise ValueError(
+                    f"Missing docs for {version}; use --full-rebuild to restore"
+                )
+            continue
         exports.append((version, commit))
-    if not exports and not args.full_rebuild:
+    if (
+        not exports
+        and not notes_exports
+        and not args.full_rebuild
+        and records == previous
+        and artifacts == previous_artifacts
+    ):
         sys.stdout.write("Release docs already up to date\n")
         return
     # Validate and export all tags before replacing any existing docs.
@@ -338,6 +515,11 @@ def import_docs(args: argparse.Namespace) -> None:
         staging = Path(temp)
         for version, commit in exports:
             export_docs(args.source, commit, staging / version)
+        for version, blob in notes_exports:
+            text = git_blob(args.source, blob).decode("utf-8")
+            output = staging / NOTES_DIRECTORY / f"{version}.md"
+            output.parent.mkdir(exist_ok=True)
+            output.write_text(strip_title(text), encoding="utf-8")
         if args.full_rebuild:
             for version, _commit in exports:
                 target = worktree / version
@@ -348,10 +530,15 @@ def import_docs(args: argparse.Namespace) -> None:
                     shutil.rmtree(worktree / version)
         for version, _commit in exports:
             (staging / version).rename(worktree / version)
+        for version, _blob in notes_exports:
+            notes_root.mkdir(exist_ok=True)
+            (staging / NOTES_DIRECTORY / f"{version}.md").replace(
+                notes_root / f"{version}.md"
+            )
         snapshot = {
             **snapshot,
             "schemaVersion": 1,
-            "artifacts": snapshot.get("artifacts", [artifact_identity()]),
+            "artifacts": artifacts,
             "providers": [
                 {
                     **(snapshot["providers"][0] if snapshot["providers"] else {}),
@@ -367,9 +554,12 @@ def import_docs(args: argparse.Namespace) -> None:
         snapshot_path.write_text(
             json.dumps(snapshot, indent=2) + "\n", encoding="utf-8"
         )
-    sys.stdout.write(
-        f"Imported {len(exports)} version(s) into {worktree}; review and commit separately\n"
+    action = (
+        f"Imported {len(exports)} version(s) into"
+        if exports
+        else "Updated release metadata in"
     )
+    sys.stdout.write(f"{action} {worktree}; review and commit separately\n")
 
 
 def main() -> int:

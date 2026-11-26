@@ -30,7 +30,8 @@ source commit. All defaults, provider IDs and release URLs belong to
 `buildish-tooling/buildish-atr-maven-bundle`.
 
 The independent orphan branch `versioned-docs` has no ancestry with main. Its
-root holds `provider-snapshot.json` and directories such as `1.2.3/`. Check it out
+root holds `provider-snapshot.json`, `release-notes/` and directories such as
+`1.2.3/`. Check it out
 at `docs/releases/`; development docs remain on the source branch.
 
 ```sh
@@ -44,7 +45,10 @@ tools/versioned-docs/checkout.sh --create
 
 Checkout/update accept `--remote`, `--source`, `--worktree`, and `--branch`.
 The default remote is this component's HTTPS URL, never Release Tooling's.
-Neither command changes remote configuration. Import never fetches.
+Neither command changes remote configuration. Import never fetches Git data; it
+only reads the public GitHub API.
+
+## Manual post-release import
 
 After verifying Maven Central publication and the finalized GitHub release,
 import the matching docs. Use the Maven Central setup in the quickstart until
@@ -63,17 +67,42 @@ tools/versioned-docs/import.sh --full-rebuild --version 1.2.3
 ```
 
 Imports record the resolved commit and copy that commit's docs without rewriting
-relative links. A tag proves discovery, not successful publication. Verify hosted
-facts before adding publication timestamps or recommending a release. For a failed
-attempt retain its record and curate `publicationState: hidden`; for a withdrawn
-release use `withdrawn` (or `tombstoned` for removed original content). This changes
+relative links. A tag proves discovery, not successful publication, so every import
+verifies each selected version against the public GitHub API, unless the version is
+curated as hidden, withdrawn or tombstoned, or its record already has complete
+publication metadata. Verification checks that the exact tag has a published final
+Release and that the hosted tag resolves to the same commit as the local tag. The
+import then records `publishedAt`, `publicationState: published` and the `X.Y`
+`releaseLine`, creating the release line if needed, and advances that line's
+`latest` and the artifact's `latestStable` when the version is newer. Existing newer
+pointers, other lines and curated exclusion decisions are preserved. A tag without
+a published Release fails the whole import before any write. Complete records are
+not verified again, so a repeated import makes no GitHub requests.
+
+Release notes come from the same tag, at
+`buildish-release-tooling/release-notes/X.Y.Z.md` (Release Tooling's
+`release_notes.path_template`). Import copies them to `release-notes/X.Y.Z.md` and sets
+the record's `releaseNotes.path`; Site Pipeline publishes them as the version's
+release-notes page. The only change to the bytes is that one leading top-level
+heading is dropped, because the site generates the page title and older tags still
+contain one. A tag without notes gets no `releaseNotes`. Hidden, withdrawn and
+tombstoned releases never gain notes. Notes should use fully qualified URLs for
+links; repository-relative links do not resolve on the website.
+
+For a failed attempt (a tag without a published Release), curate its
+`artifacts[].releases[]` entry as `hidden` before importing it; excluded versions are
+imported from their tags alone, without hosted verification or release pointers. For
+a withdrawn release use `withdrawn` (or `tombstoned` for removed original content),
+in both the scoped entry and the record. This changes
 docs publication policy, not remote releases or package retraction.
 
-Incremental import preserves existing docs and all curated metadata. Full rebuild
-reconstructs selected trees while preserving whole records, curated fields,
+Incremental import preserves existing docs and all curated metadata, and adds
+missing notes to existing records whose tags contain them. Full rebuild
+reconstructs selected trees and notes while preserving whole records, curated fields,
 unselected versions and records with tags absent locally. Both reject moved tags.
-Dirty/foreign worktrees, unowned destinations, symlinks and conflicting scoped/provider
-states fail before writes. All exports are prepared before replacing managed trees;
+Dirty/foreign worktrees, unowned destinations, symlinks, `releaseNotes` paths other
+than `release-notes/X.Y.Z.md` and conflicting scoped/provider states fail before
+writes. All exports are prepared before replacing managed trees;
 a filesystem failure during replacement can still leave partial changes. Preserve
 wanted work and inspect the diff before recovery. No staging, commits, pushes,
 history rewrites or implicit rollback occur.
@@ -85,9 +114,9 @@ git -C docs/releases diff
 python3 -m json.tool docs/releases/provider-snapshot.json
 ```
 
-Curate `artifacts[]` release selections and `latestStable` according to the current
-Pipeline contract; imports never advance recommendations. Explicit scoped and
-provider-record publication states must agree. Keep excluded records to prevent
+Curate `artifacts[]` release selections and support facts according to the current
+Pipeline contract; imports only advance the pointers of newly verified releases.
+Explicit scoped and provider-record publication states must agree. Keep excluded records to prevent
 rediscovery. Hidden/withdrawn/tombstoned originals need not remain available.
 A stale latest recommendation needs deliberate correction, never fallback to
 unreleased development docs.
@@ -120,7 +149,8 @@ currently does not fail Pipeline checking; review and correct it explicitly.
 
 Run `python3 -B -m unittest discover -s tests -p test_versioned_docs.py` or Gradle
 `versionedDocsTest` (included in `check`). Tests use disposable repositories, fixture
-commits, local remotes, and process-local identities. A manual post-release update is
+commits, local remotes, process-local identities and an in-process GitHub API
+stand-in. A manual post-release update is
 sufficient. Commit/push and website deployment remain separately authorized actions.
 
 ## Aggregate site trigger on the docs branch

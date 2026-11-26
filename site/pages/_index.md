@@ -1,5 +1,5 @@
 ---
-title: "Buildish Maven Bundles for Gradle"
+title: "Maven Bundles for Gradle"
 description: "Create a local Maven Central bundle ZIP from Gradle Maven publications or export a Njord transportable bundle."
 ---
 
@@ -23,6 +23,10 @@ Package existing Gradle Maven publications into a local Maven repository ZIP.
 Review the ZIP locally, then upload it through the Maven Central Publisher Portal.
 The plugin uses your existing `maven-publish` configuration. It requires
 **Gradle 9.1+** and **Java 17+**.
+
+> **Maven Bundles for Gradle {{< buildish-component-version >}} is released.** Use the `v{{< buildish-component-version >}}` tag for executable GitHub Actions. See the [release notes](releases/{{< buildish-component-version >}}/release-notes/).
+
+---
 
 ## Maven Central
 

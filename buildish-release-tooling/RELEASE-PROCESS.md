@@ -161,6 +161,25 @@ promotion, with explicit modes:
 - Portal promotion omits `-PbuildCentralBundle`, loads no candidate plugin and
   receives no signing credentials. `publishPlugins` uploads the retained files.
 
+## Local release preparation
+
+For the requested final version `X.Y.Z`, prepare the source changes for review:
+
+1. Check that `version.txt` contains `X.Y.Z-SNAPSHOT` or `X.Y.Z`; change it only
+   when it names a different version. Main can stay on the snapshot version.
+2. Add `buildish-release-tooling/release-notes/X.Y.Z.md`. Use the preceding
+   version's notes for structure and describe the changes in this release.
+   Do not add a top-level heading; the release and page titles provide it.
+3. Check that the note describes the intended release, run the repository's normal
+   `check` and review the local diff. The release tests in
+   [Prepare each version and review a candidate](#prepare-each-version-and-review-a-candidate)
+   need an approved environment.
+
+Local preparation ends with reviewable source changes. Commit only when separately
+requested. Human maintainers cut release candidates and promote final releases.
+Import [versioned documentation](../tools/versioned-docs/README.md#manual-post-release-import)
+after successful final publication, using the exact final tag.
+
 ## Prepare each version and review a candidate
 
 Choose an unused stable dispatch version `X.Y.Z`. Committed `version.txt` may
@@ -171,7 +190,8 @@ Candidate and final tags still identify the original reviewed source commit.
 Promotion uploads the retained candidate artifacts without rebuilding them.
 
 Add reviewed, nonempty UTF-8 Markdown at
-`buildish-release-tooling/release-notes/X.Y.Z.md`. Initial `0.1.0` notes are supplied
+`buildish-release-tooling/release-notes/X.Y.Z.md`. Do not add a top-level heading;
+the release and page titles provide it. Initial `0.1.0` notes are supplied
 for maintainer review. The artifact version is stable; `rcN` belongs to the
 candidate tag, not Maven coordinates. After completing `0.1.0`, advance main to
 the next development snapshot through an ordinary source change.
