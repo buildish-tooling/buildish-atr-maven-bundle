@@ -50,13 +50,6 @@ val ideImportActive =
   providers.systemProperty("idea.active").getOrElse("false").toBoolean() ||
     providers.systemProperty("buildship.active").getOrElse("false").toBoolean()
 
-pluginManagement {
-  repositories {
-    mavenCentral() // prefer Maven Central, in case Gradle's repo has issues
-    gradlePluginPortal()
-  }
-}
-
 @Suppress("UnstableApiUsage")
 dependencyResolutionManagement {
   repositoriesMode = RepositoriesMode.FAIL_ON_PROJECT_REPOS

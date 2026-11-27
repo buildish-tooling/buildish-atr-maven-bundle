@@ -28,13 +28,6 @@ Buildish Maven Bundles for Gradle.
 Add this to `settings.gradle.kts`:
 
 ```kotlin
-pluginManagement {
-    repositories {
-        mavenCentral()
-        gradlePluginPortal()
-    }
-}
-
 plugins {
     id("org.buildish.atr-maven-bundle.gradle-plugin") version "0.2.0"
 }
@@ -45,13 +38,6 @@ rootProject.name = "my-library"
 In a Groovy build, add this to `settings.gradle`:
 
 ```groovy
-pluginManagement {
-    repositories {
-        mavenCentral()
-        gradlePluginPortal()
-    }
-}
-
 plugins {
     id 'org.buildish.atr-maven-bundle.gradle-plugin' version '0.2.0'
 }
