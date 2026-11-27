@@ -59,6 +59,8 @@ dependencyResolutionManagement {
   }
 }
 
+pluginManagement { repositories { gradlePluginPortal() } }
+
 plugins {
   if (
     providers.environmentVariable("CI").isPresent ||
